@@ -253,7 +253,6 @@ def main() -> None:
         "# Project Map",
         "",
         f"- Index version: `{VERSION}`",
-        f"- Root: `{root}`",
         f"- Detected stack: `{', '.join(framework) or 'Generic'}`",
         f"- Indexed files: `{len(records)}`",
         f"- Updated this run: `{changed}`",
@@ -327,7 +326,6 @@ def main() -> None:
 
     manifest = {
         "version": VERSION,
-        "project_root": str(root),
         "files": {rel: rec["hash"] for rel, rec in records.items()},
         "stats": {
             "indexed": len(records),

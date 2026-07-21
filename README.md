@@ -104,9 +104,11 @@ the index cheap to refresh even on large codebases. The directory walk itself al
 `node_modules/`, `.git/`, build/cache output, etc. *during* traversal (not after), so those directories
 are never even opened.
 
-**Deterministic output.** The index contains no timestamps and no git metadata (branch/commit/changed
-files) — re-running it against unchanged source produces byte-identical files, so committing the index
-folder to your repo doesn't create noise on every regeneration.
+**Deterministic output.** The index contains no timestamps, no git metadata (branch/commit/changed
+files), and no absolute machine-specific paths — re-running it against unchanged source produces
+byte-identical files regardless of who generated it or where the project lives on disk, so committing
+the index folder to your repo and sharing it across a team doesn't create noise or merge conflicts on
+every regeneration.
 
 Full rebuild (ignores the manifest and re-parses every file):
 
