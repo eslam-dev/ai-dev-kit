@@ -1,0 +1,13 @@
+---
+description: Code review protocol
+alwaysApply: false
+---
+# Review Protocol
+Review in this order:
+1. Business correctness and missing requirements.
+2. Data integrity, transactions, concurrency, and state transitions.
+3. Authorization, validation, secrets, and information leakage.
+4. Query count, indexes, memory, queues, and external timeouts.
+5. Duplication, unnecessary abstractions, and maintainability.
+6. Tests and observability.
+Report only evidence-backed findings. Rank as Critical, High, Medium, or Low. Include file/line, consequence, and a concrete fix. Do not rewrite code during review unless explicitly asked.

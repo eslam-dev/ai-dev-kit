@@ -1,0 +1,13 @@
+---
+description: Runtime, caching, queues, and Octane safety
+globs: "app/**/*.php,config/**/*.php"
+alwaysApply: false
+---
+# Runtime and Caching
+- Cache expensive stable reads only with an explicit invalidation strategy.
+- Include tenant, locale, user/permission, and filter dimensions in cache keys where relevant.
+- Do not cache sensitive user-specific data globally.
+- Under Octane, avoid leaking request/user state through static properties, singletons, or mutable shared objects.
+- Reset request-scoped context explicitly.
+- Move CPU-heavy media conversion, AI sync, bulk imports, and external processing to queues.
+- Measure before adding caching or concurrency complexity.

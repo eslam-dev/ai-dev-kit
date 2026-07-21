@@ -1,0 +1,14 @@
+---
+description: Input validation and API output conventions
+globs: "app/Http/Requests/**/*.php,app/Http/Resources/**/*.php,app/**/*ApiResponse*.php"
+alwaysApply: false
+---
+# Validation and Responses
+- Validation rules encode request shape; business eligibility belongs in domain services/policies.
+- Use conditional rules for state-dependent fields and normalize input deliberately.
+- API output must follow the existing envelope consistently.
+- Use Resources for public model serialization when the project already uses them.
+- Do not leak stack traces, SQL, paths, gateway payloads, tokens, or raw exception messages.
+- Keep response keys backward compatible.
+- Load relationships required by Resources before serialization to avoid N+1 queries.
+- Translate user-facing messages through the project's translation system.

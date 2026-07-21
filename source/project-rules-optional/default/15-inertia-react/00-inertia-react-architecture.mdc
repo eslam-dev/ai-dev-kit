@@ -1,0 +1,18 @@
+---
+description: Inertia React TypeScript architecture and server-driven application rules
+globs: "resources/js/**/*.{ts,tsx},app/Http/**/*.php,routes/**/*.php"
+alwaysApply: false
+---
+# Inertia + React Architecture
+
+- Treat Laravel routes/controllers as the server boundary and Inertia pages as page-level UI boundaries.
+- Use React with TypeScript for new frontend code.
+- Keep page props intentional, serializable, authorized, and minimal.
+- Never send secrets, hidden model fields, internal flags, or unnecessary full models to the browser.
+- Use lazy/deferred props only when they improve real page performance and do not create inconsistent authorization.
+- Avoid duplicating server state in a global client store.
+- Use reusable components for repeated UI, but do not create speculative generic component frameworks.
+- Keep business rules and authoritative validation on the server.
+- Preserve browser history, scroll, form state, and partial reload semantics using official Inertia APIs.
+- Do not fetch through a separate JSON API when a normal Inertia visit or partial reload is the correct abstraction.
+- Use a separate API only for external/mobile clients or genuinely asynchronous UI interactions that need it.

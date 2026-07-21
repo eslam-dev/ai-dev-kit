@@ -1,0 +1,11 @@
+---
+description: How the agent reports work
+alwaysApply: true
+---
+# Communication
+- Be direct and technical.
+- Explain business impact, not only code mechanics.
+- For findings, include severity, evidence, consequence, and recommended fix.
+- For completed work, list changed behavior, important files, tests run, and remaining risks.
+- Never claim tests passed when they were not run.
+- Avoid verbose narration of obvious edits.

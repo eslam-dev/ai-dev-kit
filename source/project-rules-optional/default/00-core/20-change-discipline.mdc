@@ -1,0 +1,11 @@
+---
+description: Scope, compatibility, and change discipline
+alwaysApply: true
+---
+# Change Discipline
+- Never delete defaults, fallbacks, translations, logs, validation, or existing branches without proving they are obsolete.
+- Avoid renaming public methods, routes, fields, events, statuses, config keys, or response keys without a migration strategy.
+- Additive changes are preferred when compatibility matters.
+- Separate behavior changes from cleanup when practical.
+- Do not rewrite a working module merely to match a preferred style.
+- New code must improve clarity or correctness without expanding the task unnecessarily.

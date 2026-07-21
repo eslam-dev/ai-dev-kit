@@ -1,0 +1,19 @@
+---
+description: Authentication, authorization, tenant isolation, and IDOR prevention
+globs: "app/**/*.php,routes/**/*.php,src/**/*.php,Modules/**/*.php"
+alwaysApply: false
+---
+# Authentication and Authorization
+- Use Policies, Gates, middleware, or the project's centralized permission system.
+- Authorize both the action and the specific resource instance.
+- Prevent IDOR by scoping lookups to the authenticated user, organization, tenant, account, or authorized parent.
+- Do not use unscoped `find($id)` for tenant-owned data.
+- Never trust client-supplied role, permission, tenant, owner, account, or user IDs without assignment authorization.
+- Protect mass assignment with explicit `$fillable` or validated DTO mapping.
+- Authentication does not imply authorization.
+- Use framework password hashing; never store plaintext or reversibly encrypted passwords.
+- Rotate sessions/tokens after login, privilege changes, password changes, and account recovery where applicable.
+- Revoke tokens on logout, password reset, compromise, or account disablement.
+- Protect destructive and administrative operations with stronger authorization and re-authentication/MFA where appropriate.
+- Tenant scope must apply to reads, writes, counts, exports, jobs, notifications, queues, and cache keys.
+- Tests must cover unauthorized, cross-user, and cross-tenant access.

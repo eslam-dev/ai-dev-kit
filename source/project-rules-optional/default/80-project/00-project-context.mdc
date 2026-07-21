@@ -1,0 +1,10 @@
+---
+description: Project-specific context requirement
+alwaysApply: true
+---
+# Project Context
+- Read `.cursor/project-context.md` when present before making architectural decisions.
+- Local documented business rules override generic reusable conventions.
+- Existing consistent project patterns override preference-based rules unless they are unsafe or clearly legacy.
+- When context is missing, infer from code and record significant discoveries in the project context or local rules.
+- Keep reusable rules generic; put entity lists, routes, relationships, and project-only workflows in local project rules.

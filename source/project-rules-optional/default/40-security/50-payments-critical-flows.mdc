@@ -1,0 +1,19 @@
+---
+description: Payments, balances, inventory, and critical state-transition security
+globs: "app/**/*.php,src/**/*.php,Modules/**/*.php"
+alwaysApply: false
+---
+# Payments and Critical Business Flows
+- Calculate prices, fees, taxes, discounts, commissions, totals, and payable amounts on the server.
+- Never trust client totals, payment success flags, provider references, inventory availability, or workflow status.
+- Represent money with integer minor units or exact decimals; never floating point.
+- Verify callback signatures and reconcile amount, currency, merchant/account, order, and transaction reference.
+- Make initiation, callbacks, refunds, reservation, balance changes, and status transitions idempotent.
+- Use transactions, locks, or atomic conditional updates for competing critical operations.
+- Enforce unique constraints for transaction IDs, idempotency keys, ledger references, and one-time actions.
+- Use auditable or append-only records for financial movements where applicable.
+- Never mark an order paid, completed, sold, refunded, or fulfilled from a browser redirect alone.
+- Separate provider status from internal business status and map transitions explicitly.
+- Dispatch notifications and external side effects after commit.
+- Never log card data, CVV, OTPs, payment tokens, or sensitive provider payloads.
+- Test duplicate callbacks, out-of-order events, partial failures, concurrency, amount mismatch, and invalid signatures.

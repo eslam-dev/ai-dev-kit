@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT="${1:-.}"
+PROJECT="$(cd "$PROJECT" && pwd)"
+GLOBAL_HOME="${AI_DEV_KIT_HOME:-$HOME/.local/share/ai-dev-kit}"
+
+mkdir -p \
+  "$PROJECT/.ai/project-index/DOMAINS" \
+  "$PROJECT/.cursor/rules" \
+  "$PROJECT/.github" \
+  "$PROJECT/.specify/memory"
+
+write_if_missing() {
+  local target="$1"
+  if [[ -e "$target" ]]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$target")"
+  cat > "$target"
+}
+
+write_if_missing "$PROJECT/.cursor/rules/00-project-index-first.mdc" <<'EOF'
+---
+description: Always consult and maintain the project-local intelligence index first
+alwaysApply: true
+---
+Before broad repository exploration, run `ai-dev .`.
+Read `.ai/project-index/PROJECT_MAP.md`, `ROUTES.md`, `RELATIONS.md`, `FILES.md`, and the relevant `DOMAINS/*.md` first.
+Use the map to choose the smallest relevant source set.
+Open real source files when the map is incomplete, stale, uncertain, sensitive, or the code will be changed.
+After source changes, run `ai-dev .` again.
+The index is not authoritative for security, payments, authorization, migrations, concurrency, or production incidents.
+EOF
+
+write_if_missing "$PROJECT/.github/copilot-instructions.md" <<'EOF'
+# Project Intelligence First
+
+Before broad searching or reading, run `ai-dev .`.
+
+Read the project-local index in this order:
+1. `.ai/project-index/PROJECT_MAP.md`
+2. `.ai/project-index/ROUTES.md`
+3. `.ai/project-index/RELATIONS.md`
+4. Relevant `.ai/project-index/DOMAINS/*.md`
+5. `.ai/project-index/SYMBOLS.json`
+
+Use it to identify the smallest relevant set of real files. Verify source when data is missing, stale, uncertain, sensitive, or being modified. Refresh the index after code changes.
+EOF
+
+write_if_missing "$PROJECT/CLAUDE.md" <<'EOF'
+# Mandatory Project Intelligence Workflow
+
+At the beginning of every task, run:
+
+```bash
+ai-dev .
+```
+
+Always inspect `.ai/project-index/` before broad repository exploration. Start with `PROJECT_MAP.md`, `ROUTES.md`, `RELATIONS.md`, and the relevant domain map. Use the index to limit source reads. Verify real source for sensitive or changed logic. Re-run the indexer after modifications.
+EOF
+
+write_if_missing "$PROJECT/AGENTS.md" <<'EOF'
+# Agent Instructions
+
+All coding agents must use the project-local index first.
+
+1. Run `ai-dev .`.
+2. Read `.ai/project-index/PROJECT_MAP.md`.
+3. Read `.ai/project-index/ROUTES.md` and `RELATIONS.md`.
+4. Read the relevant domain map.
+5. Open only the required source files.
+6. Verify sensitive logic directly.
+7. Refresh the index after source changes.
+EOF
+
+write_if_missing "$PROJECT/.specify/memory/project-index.md" <<'EOF'
+# Project Index Integration
+
+Specifications, plans, and implementation tasks must consult the canonical project map at:
+
+```text
+.ai/project-index/
+```
+
+Before creating or updating a specification:
+- refresh the index with `ai-dev-project-index .`;
+- inspect architecture, routes, relationships, and the relevant domain;
+- reference exact file paths and symbols;
+- mark inferred information as inferred;
+- verify sensitive flows against current source.
+EOF
+
+write_if_missing "$PROJECT/.ai/project-index/README.md" <<'EOF'
+# Project Intelligence Index
+
+Generated and incrementally maintained by `ai-dev-project-index`.
+
+This folder is intentionally stored inside the project so Cursor, VS Code/Copilot, Claude Code, and specification workflows can reuse the same map.
+
+Do not edit generated files manually. Rebuild with:
+
+```bash
+ai-dev-project-index .
+```
+EOF
+
+printf 'Project AI integration initialized:\n'
+printf '  Cursor: .cursor/rules/00-project-index-first.mdc\n'
+printf '  VS Code/Copilot: .github/copilot-instructions.md\n'
+printf '  Claude Code: CLAUDE.md\n'
+printf '  Generic agents: AGENTS.md\n'
+printf '  Specify: .specify/memory/project-index.md\n'
+printf '  Index: .ai/project-index/\n'

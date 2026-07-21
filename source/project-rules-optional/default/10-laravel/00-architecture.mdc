@@ -1,0 +1,14 @@
+---
+description: Laravel architecture and responsibility boundaries
+globs: "**/*.php"
+alwaysApply: false
+---
+# Laravel Architecture
+- Use Laravel conventions before custom infrastructure.
+- Controllers orchestrate HTTP flow; they must not own complex business calculations or multi-step workflows.
+- Put reusable or non-trivial business flows in focused Services, Actions, Handlers, or domain modules already used by the project.
+- Do not introduce Repository interfaces by default. Use them only when they isolate a real data-source boundary, complex reusable querying, or multiple implementations.
+- Prefer explicit dependencies through constructor injection.
+- Avoid service classes that merely wrap one obvious Eloquent call.
+- Keep domain boundaries discoverable through folders and names rather than deep inheritance.
+- Extend existing module architecture instead of creating parallel patterns.

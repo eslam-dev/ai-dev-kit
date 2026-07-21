@@ -1,0 +1,13 @@
+---
+description: Transactions, concurrency, and data integrity
+globs: "app/**/*.php,src/**/*.php,Modules/**/*.php"
+alwaysApply: false
+---
+# Transactions and Concurrency
+- Use a transaction when multiple writes form one business invariant.
+- Keep transactions short; do not make slow network calls while holding locks.
+- Use row locks or atomic updates for inventory, balances, payment/order transitions, sequence allocation, and competing approvals.
+- Enforce uniqueness and critical invariants in the database, not only application checks.
+- Design webhook and callback processing to be idempotent.
+- Model state transitions explicitly and reject invalid transitions.
+- Dispatch dependent external work after commit.

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT="${1:-.}"
+
+ai-dev-init "$PROJECT"
+ai-dev-project-index "$PROJECT"
+ai-dev-project-rules "$PROJECT"

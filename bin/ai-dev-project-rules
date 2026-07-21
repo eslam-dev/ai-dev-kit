@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+
+CATEGORIES = [
+    "00-core",
+    "05-project-bootstrap",
+    "10-laravel",
+    "15-inertia-react",
+    "20-database",
+    "30-api",
+    "40-security",
+    "50-performance",
+    "60-testing",
+    "65-domain",
+    "70-workflows",
+    "75-review",
+    "90-project",
+]
+
+# Maps each unified category to the curated template folder it is seeded from
+# in project-rules-optional/default/. Categories not listed here have no curated
+# templates (65-domain is generated dynamically below; 70-workflows is a
+# reserved empty scaffold for future dynamic workflow rules).
+CATEGORY_TEMPLATE_DIRS = {
+    "00-core": "00-core",
+    "05-project-bootstrap": "05-project-bootstrap",
+    "10-laravel": "10-laravel",
+    "15-inertia-react": "15-inertia-react",
+    "20-database": "20-database",
+    "30-api": "30-api",
+    "40-security": "40-security",
+    "50-performance": "50-performance",
+    "60-testing": "60-testing",
+    "75-review": "70-review",
+    "90-project": "80-project",
+}
+
+# Curated files that duplicate what BASE_RULES already generates below
+# (index-first workflow, rule maintenance) — skip them to avoid conflicting
+# duplicate rules in 00-core.
+TEMPLATE_EXCLUDES = {
+    "00-core/15-project-index-first.mdc",
+    "00-core/20-dynamic-rule-maintenance.mdc",
+}
+
+BASE_RULES = {
+    "00-core/project-navigation.mdc": """---
+description: Project navigation and index-first workflow
+alwaysApply: true
+---
+# Project Navigation
+
+Always refresh and read `.ai/project-index/` before broad repository exploration.
+
+Read:
+- `PROJECT_MAP.md`
+- `ROUTES.md`
+- `RELATIONS.md`
+- the relevant domain map
+
+Open only the smallest relevant source set. Verify sensitive logic directly.
+""",
+    "00-core/rule-maintenance.mdc": """---
+description: Keep project-specific rules synchronized after meaningful code changes
+alwaysApply: true
+---
+# Rule Maintenance
+
+After meaningful code changes:
+1. refresh `.ai/project-index/`;
+2. identify affected architectural concepts;
+3. update the smallest matching project rules;
+4. create a focused rule when none exists;
+5. split oversized or mixed-concern rules;
+6. remove stale paths, symbols, routes, and relationships.
+
+Do not use a fixed change-type mapping table. Discover affected rule scopes from the current project structure and index.
+""",
+}
+
+def slug(value: str) -> str:
+    value = re.sub(r"[^a-zA-Z0-9._-]+", "-", value.strip()).strip("-").lower()
+    return value or "general"
+
+def write_if_missing(path: Path, content: str) -> None:
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content.rstrip() + "\n", encoding="utf-8")
+
+def find_template_root() -> Path | None:
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir.parent / "project-rules-optional" / "default",  # installed layout
+        script_dir.parent / "source" / "project-rules-optional" / "default",  # dev checkout
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return None
+
+def seed_curated_rules(rules: Path, root: Path) -> int:
+    template_root = find_template_root()
+    if template_root is None:
+        return 0
+
+    has_laravel = (root / "artisan").exists()
+    has_frontend = (root / "resources/js").exists()
+    gates = {
+        "10-laravel": has_laravel,
+        "20-database": has_laravel,
+        "50-performance": has_laravel,
+        "15-inertia-react": has_frontend,
+    }
+
+    seeded = 0
+    for category, template_dir in CATEGORY_TEMPLATE_DIRS.items():
+        if not gates.get(category, True):
+            continue
+        src_dir = template_root / template_dir
+        if not src_dir.is_dir():
+            continue
+        for src_file in sorted(src_dir.glob("*.mdc")):
+            excl_key = f"{template_dir}/{src_file.name}"
+            if excl_key in TEMPLATE_EXCLUDES:
+                continue
+            dest = rules / category / src_file.name
+            if dest.exists():
+                continue
+            write_if_missing(dest, src_file.read_text(encoding="utf-8"))
+            seeded += 1
+    return seeded
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("project", nargs="?", default=".")
+    args = parser.parse_args()
+
+    root = Path(args.project).resolve()
+    rules = root / ".cursor/rules"
+    index = root / ".ai/project-index"
+
+    for category in CATEGORIES:
+        (rules / category).mkdir(parents=True, exist_ok=True)
+
+    for rel, content in BASE_RULES.items():
+        write_if_missing(rules / rel, content)
+
+    seeded = seed_curated_rules(rules, root)
+
+    manifest_path = index / "manifest.json"
+    symbols_path = index / "SYMBOLS.json"
+
+    domains = set()
+    if symbols_path.exists():
+        try:
+            payload = json.loads(symbols_path.read_text(encoding="utf-8"))
+            for record in payload.get("files", {}).values():
+                domain = record.get("domain")
+                if domain:
+                    domains.add(str(domain))
+        except Exception:
+            pass
+
+    for domain in sorted(domains):
+        safe = slug(domain)
+        domain_dir = rules / "65-domain" / safe
+        domain_dir.mkdir(parents=True, exist_ok=True)
+
+        domain_rule = domain_dir / "overview.mdc"
+        if not domain_rule.exists():
+            domain_rule.write_text(
+                f"""---
+description: Project-specific rules for the {domain} domain
+alwaysApply: false
+---
+# {domain} Domain
+
+Use `.ai/project-index/DOMAINS/{domain}.md` or the closest generated domain map as the navigation source.
+
+Maintain this rule with durable:
+- domain boundaries;
+- business invariants;
+- key services and entry points;
+- important workflows;
+- cross-domain dependencies.
+
+Do not turn this file into a complete file inventory.
+""",
+                encoding="utf-8",
+            )
+
+    print(f"Project rules initialized: {rules}")
+    print(f"Categories: {len(CATEGORIES)} | curated rules seeded: {seeded} | domains: {len(domains)}")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,12 @@
+---
+description: REST API design and compatibility
+globs: "routes/api.php,app/Http/Controllers/Api/**/*.php,app/Http/Resources/**/*.php"
+alwaysApply: false
+---
+# API Design
+- Follow the repository's versioning, middleware, locale, authentication, and response conventions.
+- Use stable nouns and HTTP methods; avoid action routes unless the operation is a genuine command/state transition.
+- Return correct status codes and actionable validation errors.
+- Protect all state-changing endpoints with authentication, authorization, validation, and rate limiting where abuse is plausible.
+- Make list endpoints paginated and filterable with bounded limits.
+- Keep mobile/web clients backward compatible unless a versioned breaking change is intended.

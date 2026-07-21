@@ -1,0 +1,13 @@
+---
+description: Queue, event, listener, and observer conventions
+globs: "app/Jobs/**/*.php,app/Events/**/*.php,app/Listeners/**/*.php,app/Observers/**/*.php"
+alwaysApply: false
+---
+# Jobs, Events, and Observers
+- Queue slow, retryable, or external work.
+- Jobs must be idempotent or explicitly protected from duplicate execution.
+- Configure retries, backoff, timeout, and failure reporting according to side-effect risk.
+- Pass stable identifiers when serialized model state could become stale.
+- Dispatch jobs/events after database commit when they depend on committed data.
+- Observers should remain small and predictable; avoid invisible multi-system workflows.
+- Log correlation identifiers and business identifiers, never secrets.

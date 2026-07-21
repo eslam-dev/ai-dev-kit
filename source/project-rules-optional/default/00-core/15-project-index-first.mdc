@@ -1,0 +1,29 @@
+---
+description: Always use the local persistent project index before broad repository exploration
+alwaysApply: true
+---
+# Project Index First
+
+For every task inside an existing project:
+
+1. Check `.ai/project-index/manifest.json` before broad searching or reading.
+2. If the index is missing, initialize it automatically:
+   ```bash
+   ai-dev-init .
+   ai-dev-project-index .
+   ```
+3. If it exists, update it incrementally:
+   ```bash
+   ai-dev-project-index .
+   ```
+4. Read these files first:
+   - `.ai/project-index/PROJECT_MAP.md`
+   - `.ai/project-index/ROUTES.md`
+   - `.ai/project-index/RELATIONS.md`
+   - `.ai/project-index/FILES.md`
+   - the relevant file under `.ai/project-index/DOMAINS/`
+5. Use the index to select the smallest relevant set of source files.
+6. Open real source files only when the index is incomplete, stale, uncertain, security-sensitive, or the files will be changed.
+7. After modifying source code, run `ai-dev-project-index .` again before completion.
+
+The index is a navigation cache, not the source of truth. For payments, authentication, authorization, tenancy, concurrency, migrations, destructive operations, and production incidents, verify the current source code directly.

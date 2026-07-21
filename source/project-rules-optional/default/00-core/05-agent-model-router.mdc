@@ -1,0 +1,117 @@
+---
+description: Automatically classify tasks and route them to the smallest capable agent and model tier
+alwaysApply: true
+---
+# Agent and Model Router
+
+## Primary principle
+Use the smallest and cheapest capable agent for the task. Do not use a frontier reasoning model for routine work.
+
+The orchestrator must classify every task before execution and route it according to complexity, risk, scope, and uncertainty.
+
+## Routing tiers
+
+### Tier S — Small / Fast Agent
+Use for:
+- Renaming symbols or files.
+- Formatting and lint fixes.
+- Small localized bug fixes with an obvious cause.
+- Writing simple tests for existing behavior.
+- Adding straightforward validation rules.
+- Updating translations, comments, documentation, or configuration.
+- Simple CRUD additions that follow an existing pattern exactly.
+- Explaining a small code block.
+- Searching the codebase and collecting references.
+- Mechanical refactors with no architectural impact.
+
+Constraints:
+- Usually 1–3 files.
+- No schema change.
+- No payment, authorization, tenant, security, concurrency, or production-critical flow.
+- No ambiguous business decision.
+- No broad architecture change.
+
+Recommended model class:
+- Fast/mini/low-cost coding model.
+- Cursor Auto may choose the specific available model.
+
+### Tier M — Standard Engineering Agent
+Use for:
+- Normal feature implementation.
+- Multi-file bug fixes.
+- New endpoint following existing architecture.
+- Service/action extraction.
+- Query optimization with known scope.
+- Migration with low-to-medium risk.
+- Integration with an existing internal service.
+- Moderate refactor.
+- Feature tests across several layers.
+
+Typical scope:
+- 3–12 files.
+- One bounded module.
+- Clear business rules.
+- Limited database or API impact.
+
+Recommended model class:
+- Balanced coding/reasoning model.
+
+### Tier L — Strong Reasoning Agent
+Use for:
+- New module or cross-module architecture.
+- Unclear or conflicting business rules.
+- Complex database design.
+- Payment, financial, inventory, balance, or order state machines.
+- Authentication, authorization, tenant isolation, security, or privacy.
+- Race conditions, locking, idempotency, or distributed workflows.
+- High-impact query/performance problems.
+- Production incidents with uncertain root cause.
+- Legacy refactors with broad behavior risk.
+- Tasks touching more than roughly 12 files or several bounded contexts.
+
+Recommended model class:
+- Frontier/strong reasoning model such as the strongest approved model available.
+
+### Tier XL — Lead + Specialist Team
+Use only when:
+- The task spans architecture, database, security, performance, testing, and rollout.
+- Multiple independent workstreams can be delegated.
+- A production migration or critical release has substantial risk.
+- The root cause remains uncertain after initial investigation.
+- The task requires review by more than one specialist.
+
+Required team:
+- Technical Lead / Orchestrator.
+- Relevant implementation agent.
+- Database reviewer when persistence changes.
+- Security reviewer for trust-boundary or sensitive changes.
+- Test reviewer.
+- Final reviewer.
+
+## Risk overrides
+Always escalate to Tier L or XL regardless of apparent code size when the task includes:
+- Payments, refunds, balances, taxes, commissions, or financial records.
+- Authentication, authorization, roles, permissions, IDOR, or tenant isolation.
+- Secrets, personal data, uploads, webhooks, external URLs, or SSRF exposure.
+- Database deletion, destructive migration, data backfill, or irreversible change.
+- Concurrency, duplicate requests, idempotency, locks, or race conditions.
+- Production outage, data loss, security incident, or unexplained corruption.
+- Public API contract changes or backward compatibility risk.
+
+## Escalation and downgrade
+- Start at the lowest tier that appears safe.
+- Escalate immediately when new uncertainty, risk, or scope appears.
+- A small agent must stop and hand off when it encounters architecture decisions, sensitive flows, unclear business rules, or changes beyond its allowed scope.
+- A strong agent should delegate mechanical subtasks to smaller agents where supported.
+- Do not keep a strong model active for formatting, searching, boilerplate, or repetitive edits.
+- Do not split a tiny task across multiple agents; coordination overhead must be justified.
+
+## Required routing output
+Before substantial execution, internally determine:
+- Task tier.
+- Primary agent.
+- Required specialist reviews.
+- Key escalation triggers.
+- Whether parallel delegation adds real value.
+
+Do not burden the user with routing details unless useful, requested, or the task is high risk.

@@ -1,0 +1,14 @@
+---
+description: Controller conventions
+globs: "app/Http/Controllers/**/*.php"
+alwaysApply: false
+---
+# Controllers
+- Validate with Form Requests for non-trivial input; small one-off validation may remain inline when consistent locally.
+- Authorize before reading or mutating protected resources.
+- Delegate business workflows to the established service/action/handler layer.
+- Return the project's standard Resource, ApiResponse, Inertia response, redirect, or view format.
+- Avoid hidden writes during read endpoints.
+- Do not catch broad exceptions only to return their raw messages.
+- Keep pagination, filtering, sorting, and eager loading explicit.
+- Never use `Model::all()` for unbounded production datasets.

@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+VERSION = "1.1.0"
+IGNORE_PREFIXES = (
+    ".git/", ".idea/", ".vscode/", "vendor/", "node_modules/", "storage/",
+    "bootstrap/cache/", "public/build/", "dist/", "build/", "coverage/",
+    ".next/", ".nuxt/", ".cache/", ".ai/project-index/",
+)
+SOURCE_SUFFIXES = {
+    ".php", ".js", ".jsx", ".ts", ".tsx", ".vue", ".py", ".go", ".java",
+    ".kt", ".rb", ".rs", ".cs", ".sql", ".graphql", ".gql",
+}
+SPECIAL_FILES = {
+    "composer.json", "package.json", "vite.config.js", "vite.config.ts",
+    "phpunit.xml", "phpunit.xml.dist", "artisan",
+}
+PHP_DECL = re.compile(
+    r"(?m)^\s*(?:final\s+|abstract\s+|readonly\s+)?"
+    r"(?:(?P<kind>class|interface|trait|enum)\s+(?P<type>[A-Za-z_][A-Za-z0-9_]*)"
+    r"|(?:(?:public|protected|private|static|final|abstract|readonly)\s+)*"
+    r"function\s+(?P<func>[A-Za-z_][A-Za-z0-9_]*)\s*\()"
+)
+JS_DECL = re.compile(
+    r"(?m)^\s*(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+(?P<func>[A-Za-z_$][\w$]*)\s*\("
+    r"|^\s*(?:export\s+)?(?:const|let|var)\s+(?P<const>[A-Za-z_$][\w$]*)\s*="
+    r"|^\s*(?:export\s+(?:default\s+)?)?class\s+(?P<class>[A-Za-z_$][\w$]*)"
+)
+PHP_NAMESPACE = re.compile(r"(?m)^\s*namespace\s+([^;]+);")
+PHP_USE = re.compile(r"(?m)^\s*use\s+([^;]+);")
+JS_IMPORT = re.compile(r"(?m)^\s*import\s+.*?\s+from\s+['\"]([^'\"]+)['\"]")
+ROUTE = re.compile(
+    r"Route::(?P<verb>get|post|put|patch|delete|options|any|match|resource|apiResource)"
+    r"\s*\(\s*(?P<body>[^;\n]+)"
+)
+RELATION = re.compile(
+    r"return\s+\$this->(?P<kind>hasOne|hasMany|belongsTo|belongsToMany|morphOne|morphMany|morphTo|morphToMany|hasOneThrough|hasManyThrough)"
+    r"\s*\(\s*(?P<target>[^,\)]+)"
+)
+TABLE = re.compile(r"(?:Schema::(?:create|table)|protected\s+\$table\s*=)\s*\(?\s*['\"]([^'\"]+)['\"]")
+
+def digest(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def is_ignored(rel: str) -> bool:
+    rel = rel.replace("\\", "/")
+    return any(rel == p.rstrip("/") or rel.startswith(p) for p in IGNORE_PREFIXES)
+
+def discover(root: Path) -> list[Path]:
+    files = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel_dir = Path(dirpath).relative_to(root).as_posix()
+        rel_dir = "" if rel_dir == "." else rel_dir
+        # Prune ignored directories in place so os.walk never descends into
+        # vendor/, node_modules/, .git/, etc. instead of filtering after a
+        # full recursive walk.
+        dirnames[:] = [
+            d for d in dirnames
+            if not is_ignored(f"{rel_dir}/{d}" if rel_dir else d)
+        ]
+        for name in filenames:
+            rel = f"{rel_dir}/{name}" if rel_dir else name
+            if is_ignored(rel):
+                continue
+            if Path(name).suffix.lower() in SOURCE_SUFFIXES or name in SPECIAL_FILES or rel.startswith("routes/"):
+                files.append(Path(dirpath) / name)
+    return sorted(files)
+
+def domain_of(rel: str) -> str:
+    parts = Path(rel).parts
+    if rel.startswith("app/"):
+        if len(parts) >= 4 and parts[1] in {"Domain", "Domains", "Modules"}:
+            return parts[2]
+        return parts[1] if len(parts) > 1 else "Application"
+    if rel.startswith("resources/js/"):
+        if len(parts) >= 4 and parts[2].lower() in {"pages", "features", "modules"}:
+            return parts[3]
+        return "Frontend"
+    if rel.startswith("routes/"):
+        return "Routes"
+    if rel.startswith("database/"):
+        return "Database"
+    if rel.startswith("tests/"):
+        return "Tests"
+    return parts[0] if parts else "Root"
+
+def responsibility(rel: str) -> str:
+    low = rel.lower()
+    checks = [
+        ("routes/", "Application route definitions"),
+        ("controller", "HTTP controller / entry point"),
+        ("request", "Validation and request authorization"),
+        ("policy", "Resource authorization"),
+        ("middleware", "HTTP middleware"),
+        ("resource", "API/data transformation"),
+        ("model", "Persistence model"),
+        ("migration", "Database schema migration"),
+        ("service", "Application/domain service"),
+        ("action", "Single-purpose application action"),
+        ("handler", "Application/domain handler"),
+        ("job", "Queued/background job"),
+        ("event", "Application/domain event"),
+        ("listener", "Event listener"),
+        ("observer", "Model lifecycle observer"),
+        ("command", "Console command"),
+        ("resources/js/pages", "Inertia/React page"),
+        ("resources/js/components", "React component"),
+        ("resources/js/hooks", "React hook"),
+        ("test", "Automated test"),
+    ]
+    for token, value in checks:
+        if token in low:
+            return value
+    return "Project source or configuration"
+
+def parse(path: Path, rel: str) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    symbols: list[dict[str, str]] = []
+    imports: list[str] = []
+    routes: list[dict[str, str]] = []
+    relations: list[dict[str, str]] = []
+    namespace = None
+
+    if path.suffix.lower() == ".php" or rel.startswith("routes/"):
+        m = PHP_NAMESPACE.search(text)
+        namespace = m.group(1).strip() if m else None
+        for m in PHP_DECL.finditer(text):
+            if m.group("func"):
+                symbols.append({"kind": "function", "name": m.group("func")})
+            else:
+                symbols.append({"kind": m.group("kind"), "name": m.group("type")})
+        imports = [m.group(1).strip() for m in PHP_USE.finditer(text)]
+        for m in ROUTE.finditer(text):
+            routes.append({
+                "method": m.group("verb").upper(),
+                "definition": " ".join(m.group("body").split())[:600],
+            })
+        for m in RELATION.finditer(text):
+            relations.append({
+                "kind": "eloquent",
+                "type": m.group("kind"),
+                "target": " ".join(m.group("target").split())[:200],
+            })
+    elif path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx", ".vue"}:
+        for m in JS_DECL.finditer(text):
+            name = m.group("func") or m.group("const") or m.group("class")
+            kind = "function" if m.group("func") else ("class" if m.group("class") else "export")
+            symbols.append({"kind": kind, "name": name})
+        imports = [m.group(1) for m in JS_IMPORT.finditer(text)]
+
+    tables = sorted(set(TABLE.findall(text)))
+    return {
+        "path": rel,
+        "language": path.suffix.lower().lstrip(".") or path.name,
+        "namespace": namespace,
+        "responsibility": responsibility(rel),
+        "domain": domain_of(rel),
+        "symbols": symbols,
+        "imports": imports[:100],
+        "routes": routes,
+        "relations": relations,
+        "tables": tables,
+        "hash": digest(path),
+        "size": path.stat().st_size,
+    }
+
+def markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    out = ["| " + " | ".join(headers) + " |", "|" + "|".join(["---"] * len(headers)) + "|"]
+    for row in rows:
+        safe = [str(v).replace("|", "\\|").replace("\n", " ") for v in row]
+        out.append("| " + " | ".join(safe) + " |")
+    return "\n".join(out)
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("project", nargs="?", default=".")
+    ap.add_argument("--full", action="store_true")
+    args = ap.parse_args()
+
+    root = Path(args.project).resolve()
+    out = root / ".ai/project-index"
+    domains_dir = out / "DOMAINS"
+    out.mkdir(parents=True, exist_ok=True)
+    domains_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = out / "manifest.json"
+    symbols_path = out / "SYMBOLS.json"
+
+    old_manifest = {}
+    old_symbols: dict[str, Any] = {}
+    if not args.full and manifest_path.exists():
+        try:
+            old_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            old_manifest = {}
+    if not args.full and symbols_path.exists():
+        try:
+            old_symbols = json.loads(symbols_path.read_text(encoding="utf-8")).get("files", {})
+        except Exception:
+            old_symbols = {}
+
+    files = discover(root)
+    current_paths = {p.relative_to(root).as_posix(): p for p in files}
+    old_hashes = old_manifest.get("files", {})
+    records: dict[str, Any] = {}
+
+    changed = 0
+    reused = 0
+    for rel, path in current_paths.items():
+        h = digest(path)
+        if not args.full and old_hashes.get(rel) == h and rel in old_symbols:
+            records[rel] = old_symbols[rel]
+            reused += 1
+        else:
+            records[rel] = parse(path, rel)
+            changed += 1
+
+    removed = sorted(set(old_hashes) - set(current_paths))
+
+    domains: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    all_routes = []
+    all_relations = []
+    for record in records.values():
+        domains[record["domain"]].append(record)
+        for route in record["routes"]:
+            all_routes.append({"file": record["path"], **route})
+        for relation in record["relations"]:
+            all_relations.append({"file": record["path"], **relation})
+
+    framework = []
+    if (root / "artisan").exists():
+        framework.append("Laravel")
+    if (root / "resources/js").exists():
+        framework.append("JavaScript/TypeScript frontend")
+    if (root / "composer.json").exists():
+        framework.append("Composer")
+    if (root / "package.json").exists():
+        framework.append("Node.js")
+
+    project_map = [
+        "# Project Map",
+        "",
+        f"- Index version: `{VERSION}`",
+        f"- Root: `{root}`",
+        f"- Detected stack: `{', '.join(framework) or 'Generic'}`",
+        f"- Indexed files: `{len(records)}`",
+        f"- Updated this run: `{changed}`",
+        f"- Reused unchanged entries: `{reused}`",
+        f"- Removed since previous index: `{len(removed)}`",
+        "",
+        "## Domains",
+        "",
+    ]
+    for name in sorted(domains):
+        project_map.append(f"- [{name}](DOMAINS/{re.sub(r'[^A-Za-z0-9._-]+', '-', name)}.md): {len(domains[name])} files")
+    project_map += ["", "## Primary entry points", ""]
+    for candidate in ["routes/web.php", "routes/api.php", "routes/console.php", "app/Http/Kernel.php", "bootstrap/app.php", "resources/js/app.tsx", "resources/js/app.jsx"]:
+        if candidate in records:
+            project_map.append(f"- `{candidate}` — {records[candidate]['responsibility']}")
+    (out / "PROJECT_MAP.md").write_text("\n".join(project_map) + "\n", encoding="utf-8")
+
+    route_rows = [[r["method"], r["file"], r["definition"]] for r in all_routes]
+    routes_md = "# Routes\n\n"
+    routes_md += markdown_table(["Method", "File", "Definition"], route_rows) if route_rows else "_No routes detected._"
+    (out / "ROUTES.md").write_text(routes_md + "\n", encoding="utf-8")
+
+    file_rows = []
+    for rel in sorted(records):
+        rec = records[rel]
+        syms = ", ".join(s["name"] for s in rec["symbols"][:8])
+        file_rows.append([rel, rec["domain"], rec["responsibility"], syms])
+    (out / "FILES.md").write_text(
+        "# Files\n\n" + markdown_table(["Path", "Domain", "Responsibility", "Symbols"], file_rows) + "\n",
+        encoding="utf-8"
+    )
+
+    relation_rows = []
+    for rel in sorted(records):
+        rec = records[rel]
+        for imp in rec["imports"][:20]:
+            relation_rows.append([rel, "import", imp])
+        for relation in rec["relations"]:
+            relation_rows.append([rel, relation["type"], relation["target"]])
+        for table in rec["tables"]:
+            relation_rows.append([rel, "table", table])
+    relations_md = "# Relationships\n\n"
+    relations_md += markdown_table(["Source", "Relation", "Target"], relation_rows) if relation_rows else "_No relationships detected._"
+    (out / "RELATIONS.md").write_text(relations_md + "\n", encoding="utf-8")
+
+    existing_domain_files = set(domains_dir.glob("*.md"))
+    generated_domain_files = set()
+    for name, items in sorted(domains.items()):
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "-", name)
+        dest = domains_dir / f"{safe}.md"
+        generated_domain_files.add(dest)
+        rows = []
+        for rec in sorted(items, key=lambda x: x["path"]):
+            rows.append([
+                rec["path"],
+                rec["responsibility"],
+                ", ".join(s["name"] for s in rec["symbols"][:10]),
+            ])
+        dest.write_text(
+            f"# Domain: {name}\n\n" + markdown_table(["File", "Responsibility", "Symbols"], rows) + "\n",
+            encoding="utf-8"
+        )
+    for stale in existing_domain_files - generated_domain_files:
+        stale.unlink()
+
+    symbols_payload = {
+        "version": VERSION,
+        "files": records,
+    }
+    symbols_path.write_text(json.dumps(symbols_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    manifest = {
+        "version": VERSION,
+        "project_root": str(root),
+        "files": {rel: rec["hash"] for rel, rec in records.items()},
+        "stats": {
+            "indexed": len(records),
+            "updated": changed,
+            "reused": reused,
+            "removed": len(removed),
+        },
+    }
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    readme = out / "README.md"
+    if not readme.exists():
+        readme.write_text(
+            "# Project Intelligence Index\n\nGenerated by `ai-dev-project-index`.\n",
+            encoding="utf-8"
+        )
+
+    print(f"Project index: {out}")
+    print(f"Indexed: {len(records)} | updated: {changed} | reused: {reused} | removed: {len(removed)}")
+
+if __name__ == "__main__":
+    main()

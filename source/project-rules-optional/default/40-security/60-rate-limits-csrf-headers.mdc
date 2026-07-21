@@ -1,0 +1,16 @@
+---
+description: Abuse protection, CSRF, CORS, cookies, and browser security
+globs: "app/**/*.php,routes/**/*.php,config/**/*.php,bootstrap/**/*.php"
+alwaysApply: false
+---
+# Abuse and Browser Security
+- Apply endpoint-specific limits by identity, IP, tenant, and resource where appropriate.
+- Use strict throttles and cooldowns for login, OTP, reset, verification, invitations, and enumeration-sensitive endpoints.
+- Avoid account enumeration with appropriately generic public authentication responses.
+- Keep CSRF enabled for cookie-authenticated state-changing requests.
+- Configure CORS with explicit trusted origins, methods, and headers; never combine wildcard origins with credentials.
+- Use Secure, HttpOnly, and appropriate SameSite cookie settings.
+- Configure trusted proxies before relying on client IP or HTTPS detection.
+- Maintain CSP, frame restrictions, MIME sniffing protection, referrer policy, and HSTS after correct HTTPS deployment.
+- State-changing actions must not use GET.
+- Protect exports, reports, search, AI operations, and file processing from unbounded abuse.

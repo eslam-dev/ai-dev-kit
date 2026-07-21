@@ -1,0 +1,14 @@
+---
+description: Core engineering behavior for every task
+alwaysApply: true
+---
+# Operating Principles
+- Inspect before editing. Never infer architecture from filenames alone.
+- Understand the business outcome, current flow, callers, persistence, side effects, and failure modes.
+- Prefer the smallest safe and complete solution.
+- Preserve existing behavior and contracts unless the requirement explicitly changes them.
+- Reuse a proven local pattern before introducing a new one.
+- Do not add abstractions for hypothetical future use.
+- Do not hide uncertainty; verify it in code, tests, configuration, or documentation.
+- Keep changes scoped. Do not perform drive-by refactors.
+- Treat database integrity, authorization, payment state, inventory, and user data as high-risk boundaries.

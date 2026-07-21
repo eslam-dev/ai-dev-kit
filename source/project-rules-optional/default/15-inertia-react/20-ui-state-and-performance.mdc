@@ -1,0 +1,16 @@
+---
+description: Inertia page props, client state, rendering, and frontend performance
+globs: "resources/js/**/*.{ts,tsx},app/Http/**/*.php"
+alwaysApply: false
+---
+# UI State and Performance
+
+- Send only props required for the current page and interaction.
+- Use pagination for unbounded lists and avoid serializing large nested relationships.
+- Prevent N+1 before constructing Inertia props.
+- Use partial reloads, deferred props, and prefetching only when measurement or UX justifies them.
+- Avoid repeated requests caused by unstable dependencies or render loops.
+- Memoization is not automatic; use it only for measurable expensive work or stable identity requirements.
+- Keep filters and sorting in the URL when they should be shareable, bookmarkable, or restorable.
+- Preserve form values and scroll where the workflow expects it.
+- Lazy-loaded frontend chunks must retain proper error/loading states.

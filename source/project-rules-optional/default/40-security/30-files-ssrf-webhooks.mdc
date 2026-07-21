@@ -1,0 +1,31 @@
+---
+description: File upload, SSRF, webhook, and integration security
+globs: "app/**/*.php,config/**/*.php,routes/**/*.php,src/**/*.php,Modules/**/*.php"
+alwaysApply: false
+---
+# Files, SSRF, Webhooks, and Integrations
+
+## Uploads
+- Validate size, MIME type, extension, file signature/content when feasible, and expected dimensions or structure.
+- Do not trust original filenames or client MIME types.
+- Generate random filenames and keep private files outside public web roots.
+- Use signed URLs or authorized download controllers for private files.
+- Prevent executable uploads and double-extension bypasses.
+- Re-encode high-risk images/documents when appropriate and scan high-risk uploads.
+- Enforce authorization for upload, preview, download, replace, and delete.
+
+## SSRF
+- Treat user-supplied URLs as hostile.
+- Allow only required schemes and approved hosts.
+- Reject localhost, loopback, link-local, private, metadata-service, and internal network targets.
+- Revalidate redirects and DNS resolution where relevant.
+- Apply strict timeouts and response-size limits.
+- Never forward internal credentials or arbitrary headers to user-controlled URLs.
+
+## Webhooks
+- Verify signatures with the provider's documented algorithm and constant-time comparison.
+- Validate timestamp freshness and reject replays.
+- Enforce unique provider event IDs and idempotent processing.
+- Verify amount, currency, order ownership, and transaction references against server records.
+- Return quickly and process expensive work asynchronously after durable receipt.
+- Log safe metadata, not full sensitive payloads.

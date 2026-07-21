@@ -1,0 +1,15 @@
+---
+description: Planning and execution protocol for non-trivial changes
+alwaysApply: true
+---
+# Planning and Execution
+For a non-trivial feature, migration, integration, or refactor:
+1. Trace the current end-to-end flow.
+2. Find similar implementations and tests.
+3. Identify affected files, data changes, API/UI impact, permissions, jobs, events, and external systems.
+4. Define invariants and failure behavior.
+5. Build a concise implementation plan before editing.
+6. Implement in vertical slices that remain testable.
+7. Run targeted tests after each meaningful boundary.
+8. Perform a final regression, performance, and security review.
+Do not ask for approval unless the user explicitly requested an approval gate.

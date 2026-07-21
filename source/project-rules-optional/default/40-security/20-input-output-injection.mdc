@@ -1,0 +1,17 @@
+---
+description: Input validation, output encoding, and injection prevention
+globs: "app/**/*.php,routes/**/*.php,resources/**/*.php,src/**/*.php,Modules/**/*.php"
+alwaysApply: false
+---
+# Input, Output, and Injection Safety
+- Validate with Form Requests or the project's centralized validation pattern before business logic.
+- Whitelist accepted fields; never pass `$request->all()` into models or services.
+- Validate enums, dates, money, identifiers, and allowed state transitions server-side.
+- Escape output for its context: HTML, JavaScript, URL, CSV, Markdown, email, or logs.
+- Never render untrusted HTML unless sanitized using an approved allowlist.
+- Use parameterized SQL. Raw SQL must contain only server-controlled structure and bound values.
+- Never pass untrusted values to `eval`, dynamic includes, unserialize, shell execution, regex construction, or template compilation.
+- Neutralize CSV formula injection for values starting with `=`, `+`, `-`, or `@`.
+- Generate server-side filenames and prevent path traversal.
+- Validate redirects and callback URLs against an allowlist.
+- Production errors must not expose stack traces, paths, SQL, tokens, credentials, or internal implementation details.

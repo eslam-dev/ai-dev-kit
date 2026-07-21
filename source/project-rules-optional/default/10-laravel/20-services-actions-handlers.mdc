@@ -1,0 +1,13 @@
+---
+description: Service, action, resolver, and handler design
+globs: "app/Services/**/*.php,app/Actions/**/*.php,app/**/*Handler.php,Modules/**/*.php,src/**/*.php"
+alwaysApply: false
+---
+# Services, Actions, and Handlers
+- One class should represent one cohesive capability or workflow.
+- Public method names must describe business intent: `reserveCar`, `completePayment`, `initializePipeline`.
+- Keep orchestration separate from gateway-specific implementations using interfaces/factories only when multiple providers exist.
+- Use resolvers/factories for selecting payment or checkout implementations instead of condition-heavy controllers.
+- Return typed values, DTOs, models, or documented arrays; avoid ambiguous mixed returns.
+- Do not use static state for request-specific data, especially under Octane.
+- External integrations require timeouts, structured error mapping, safe logging, and idempotency where retries are possible.

@@ -1,0 +1,20 @@
+---
+description: Mandatory secure-by-default engineering baseline
+alwaysApply: true
+---
+# Secure-by-Default Engineering
+
+Security is a release requirement, not an optional review.
+
+- Never commit or expose secrets, credentials, private keys, access tokens, customer data, production dumps, internal endpoints, or signed URLs.
+- Never trust client-provided identifiers, prices, discounts, roles, permissions, ownership, totals, payment status, or workflow state.
+- Authenticate and authorize every protected server-side operation. Hiding UI controls is not authorization.
+- Default to deny and grant only the minimum required permission.
+- Validate all external input at the boundary: routes, headers, JSON, query strings, files, webhooks, imports, and callbacks.
+- Use parameter binding and framework APIs. Never concatenate untrusted input into SQL, shell commands, paths, templates, or URLs.
+- Return generic production errors and log only safe diagnostic context.
+- Redact secrets and sensitive fields from logs, exceptions, monitoring, queued payloads, caches, and audit records.
+- Apply rate limits to authentication, OTP, password reset, invitations, uploads, exports, webhooks, search, and expensive endpoints.
+- Review new dependencies for vulnerabilities, maintenance status, permissions, and necessity.
+- Never disable TLS verification, CSRF, signatures, validation, authorization, or security headers to make an integration work.
+- Unresolved Critical or High security issues block completion.

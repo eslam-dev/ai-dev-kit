@@ -1,0 +1,14 @@
+---
+description: Testing strategy and regression requirements
+globs: "tests/**/*.php,app/**/*.php,src/**/*.php"
+alwaysApply: false
+---
+# Testing
+- Add regression tests for fixed bugs and feature tests for business workflows.
+- Test success, validation failure, authorization failure, invalid state transitions, and important integration failures.
+- Keep unit tests for isolated calculation or transformation logic; prefer feature tests for Laravel wiring.
+- Use factories/builders and avoid dependence on execution order or shared database state.
+- Mock external boundaries, not core domain behavior.
+- Assert persisted state and side effects, not only HTTP status.
+- For payment/webhook flows, test duplicate delivery and retry behavior.
+- Run the narrow relevant suite first, then broader suites when practical.

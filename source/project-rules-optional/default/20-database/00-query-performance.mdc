@@ -1,0 +1,39 @@
+---
+description: Strict database query, Eloquent performance, and N+1 prevention rules
+globs: "app/**/*.php,src/**/*.php,Modules/**/*.php,routes/**/*.php,tests/**/*.php"
+alwaysApply: false
+---
+# Query Performance and Mandatory N+1 Prevention
+
+## Non-negotiable N+1 rule
+- Never introduce, preserve, or approve an N+1 query.
+- Never execute database queries, lazy-loaded relationships, aggregates, accessors that query the database, or service methods that query the database from inside a loop.
+- Treat loops in controllers, services, actions, jobs, commands, resources, serializers, notifications, exports, and templates as potential N+1 locations.
+- Before iterating over models, preload every relationship and nested relationship used by the loop or its called code.
+- Use `with()`, `load()`, `loadMissing()`, `withCount()`, `withExists()`, `withSum()`, `withAvg()`, subqueries, joins, or batch lookups as appropriate.
+- Do not rely on implicit lazy loading. In development and tests, enable `Model::preventLazyLoading()` when compatible with the project.
+- API Resources must not trigger queries. Use `whenLoaded()`, `whenCounted()`, and precomputed attributes.
+- Accessors, casts, presenters, policies, and appended attributes must not silently query a relationship for every model.
+- For polymorphic relations, use `morphWith()`, `loadMorph()`, or equivalent batched loading.
+- For recursive data, use bounded eager loading, recursive CTEs, or explicit batch loading; never issue one query per node.
+- If a required relation cannot be safely preloaded, redesign the query or response shape before implementation.
+- Do not fix N+1 by loading an unbounded dataset into memory.
+
+## Query construction
+- Select only needed columns while retaining primary and foreign keys required by relationships.
+- Use `exists()` for existence checks and database aggregates for counts and sums.
+- Use `withCount()` or aggregate subqueries instead of calling relation `count()` repeatedly.
+- Paginate unbounded user-facing collections.
+- Use `chunkById()`, `lazyById()`, cursors, or queue batches for large background work.
+- Avoid repeated identical queries in one request.
+- Confirm indexes for frequent filters, joins, tenant keys, status/date scans, foreign keys, and unique invariants.
+- Never optimize by changing business behavior, weakening authorization, or hiding bad queries behind caching.
+
+## Mandatory verification
+Before completing a database-affecting task:
+1. Search modified paths for queries or relationship access inside loops.
+2. Inspect Resources, accessors, policies, and nested calls used by collections.
+3. Verify all required nested relationships are eager loaded.
+4. Compare query count with one record and multiple records; it must remain bounded.
+5. Add a regression test or query-count assertion for high-risk paths.
+6. Report the final query strategy and any deliberate trade-off.

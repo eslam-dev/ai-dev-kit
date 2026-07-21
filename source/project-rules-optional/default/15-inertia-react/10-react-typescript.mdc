@@ -1,0 +1,18 @@
+---
+description: React TypeScript component, form, and frontend quality rules
+globs: "resources/js/**/*.{ts,tsx}"
+alwaysApply: false
+---
+# React + TypeScript
+
+- Do not use `any` unless interoperability makes it unavoidable and the reason is documented.
+- Derive page prop and domain types from stable contracts; avoid duplicating inconsistent type definitions.
+- Keep components focused and prefer composition over large prop-heavy components.
+- Use controlled or official Inertia form patterns consistently with the project.
+- Display server validation errors beside the relevant fields.
+- Disable or guard duplicate submissions and preserve idempotency for critical actions.
+- Do not use `useEffect` for values that can be derived during render.
+- Clean up subscriptions, timers, and listeners.
+- Use semantic HTML, keyboard support, labels, focus handling, and accessible status/error messaging.
+- Keep expensive lists paginated or virtualized when necessary.
+- Do not expose authorization decisions only in React; server-side policies remain mandatory.

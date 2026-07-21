@@ -1,0 +1,167 @@
+---
+description: Automatically create and maintain project-specific Cursor rules and project intelligence after every meaningful code change.
+alwaysApply: true
+---
+
+# Dynamic Rule Maintenance Protocol
+
+## Mandatory Behavior
+
+For every meaningful code change, you MUST keep the project-specific knowledge synchronized.
+
+This includes:
+- creating missing project rule folders and files;
+- updating existing project rules;
+- splitting oversized rules;
+- updating the project index;
+- removing stale references caused by renamed or deleted code.
+
+Do this automatically. Do not wait for the user to ask.
+
+## Required Project Structure
+
+Ensure this structure exists:
+
+```text
+.cursor/
+└── rules/
+    ├── 00-core/
+    ├── 10-backend/
+    ├── 20-frontend/
+    ├── 30-database/
+    ├── 40-routes-api/
+    ├── 50-security/
+    ├── 60-domain/
+    ├── 70-workflows/
+    ├── 80-testing/
+    └── 90-project/
+```
+
+Also ensure:
+
+```text
+.ai/
+└── project-index/
+    ├── PROJECT_MAP.md
+    ├── ROUTES.md
+    ├── FILES.md
+    ├── RELATIONS.md
+    ├── SYMBOLS.json
+    ├── manifest.json
+    └── DOMAINS/
+```
+
+If any folder or required file is missing, create it automatically.
+
+## Dynamic Rule Discovery
+
+Do not rely on a hardcoded mapping table.
+
+After code changes:
+
+1. Inspect the changed files and detected symbols.
+2. Determine which architectural concepts were affected.
+3. Find existing project rule files whose scope matches those concepts.
+4. Update the smallest relevant rule files.
+5. If no matching rule exists, create a focused new `.mdc` rule in the most appropriate category.
+6. If a rule no longer represents the current codebase, update or remove the stale section.
+7. If a file or symbol was renamed or deleted, update all affected mappings and rule references.
+
+Examples of discoverable concepts include:
+- backend architecture;
+- services/actions/handlers;
+- controllers and requests;
+- models and relationships;
+- routes and middleware;
+- APIs and resources;
+- frontend pages/components/hooks;
+- permissions and workflows;
+- queues/events/listeners;
+- security boundaries;
+- database schema and indexes;
+- tests and fixtures;
+- domain-specific business rules.
+
+These are examples, not fixed conditions.
+
+## Rule File Design
+
+Each project rule must:
+- describe one focused concern;
+- use exact file paths and symbol names where useful;
+- separate verified facts from inferred conventions;
+- stay concise;
+- avoid copying source code;
+- avoid becoming a file inventory dump;
+- include only durable project knowledge.
+
+Preferred maximum:
+- about 80 lines for normal rules;
+- about 120 lines only when splitting would reduce clarity.
+
+When a rule grows beyond a focused scope:
+1. split it by domain, module, or concern;
+2. keep a short parent/index rule;
+3. link to the child rules.
+
+## Large Project Strategy
+
+For large or monorepo projects:
+
+- create rules per domain or bounded context;
+- create subfolders under `60-domain/`;
+- create route rules per route group or application;
+- create backend rules per module;
+- create frontend rules per app/package;
+- create database rules per schema or bounded context;
+- create workflow rules per major business flow;
+- never put the entire project into one rule file.
+
+Recommended scalable pattern:
+
+```text
+.cursor/rules/
+├── 00-core/
+│   ├── project-navigation.mdc
+│   └── architecture-overview.mdc
+├── 10-backend/
+│   ├── shared-conventions.mdc
+│   └── modules/
+├── 20-frontend/
+│   ├── shared-conventions.mdc
+│   └── apps/
+├── 30-database/
+│   ├── shared-schema-rules.mdc
+│   └── domains/
+├── 40-routes-api/
+│   ├── route-index.mdc
+│   └── groups/
+├── 60-domain/
+│   └── <domain-name>/
+└── 70-workflows/
+    └── <workflow-name>.mdc
+```
+
+## Synchronization Procedure
+
+After meaningful changes:
+
+1. Complete the code change.
+2. Run or refresh the project index.
+3. Read the changed file mappings and affected relationships.
+4. Update or create the relevant project rules.
+5. Remove stale references.
+6. Split any oversized rule.
+7. Verify all referenced paths and symbols exist.
+8. Finish only after rules and index match the codebase.
+
+## Trivial Change Exception
+
+Do not update project rules for:
+- typo-only changes;
+- whitespace or formatting-only changes;
+- comments;
+- temporary debug code;
+- purely cosmetic UI edits with no reusable convention or structural effect.
+
+Even for trivial changes, do not delete or corrupt the existing index.

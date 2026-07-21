@@ -1,0 +1,15 @@
+---
+description: Models, enums, casts, and DTO conventions
+globs: "app/Models/**/*.php,app/Enum*/**/*.php,app/DTOs/**/*.php,src/Models/**/*.php,src/Enums/**/*.php"
+alwaysApply: false
+---
+# Models, Enums, and DTOs
+- Models define relationships, casts, scopes, and tightly model-bound invariants.
+- Avoid turning models into large workflow services.
+- Use enums for bounded states, types, payment statuses, conditions, and provider modes.
+- Cast enums and JSON fields explicitly.
+- Name relationships by domain meaning and provide inverse relationships where useful.
+- Use query scopes for reusable filtering logic.
+- DTOs are preferred when moving structured data across service or integration boundaries.
+- Model events may maintain local deterministic fields, but expensive or external side effects belong in jobs/listeners.
+- Protect against mass-assignment and accidental exposure of sensitive fields.
