@@ -20,10 +20,12 @@ cp -r "$ROOT/source/project-rules-optional" "$HOME/.local/share/ai-dev-kit/proje
 install_links() {
   local src_dir="$1" target_dir="$2" prefix="$3"
   shopt -s nullglob
+  local -A valid_names=()
   for src in "$src_dir"/*; do
     local name base target
     base="$(basename "$src")"
     name="${prefix}${base}"
+    valid_names["$name"]=1
     target="$target_dir/$name"
 
     if [[ -e "$target" || -L "$target" ]]; then
@@ -35,6 +37,18 @@ install_links() {
     fi
     ln -s "$src" "$target"
   done
+
+  # Clean up symlinks left behind by a source that was since renamed or removed
+  # (e.g. a skill/agent directory renamed upstream) instead of leaving them broken.
+  for target in "$target_dir/$prefix"*; do
+    [[ -L "$target" ]] || continue
+    local name
+    name="$(basename "$target")"
+    if [[ -z "${valid_names[$name]:-}" ]]; then
+      mkdir -p "$BACKUP/$(basename "$target_dir")"
+      mv "$target" "$BACKUP/$(basename "$target_dir")/$name"
+    fi
+  done
 }
 
 install_links "$ROOT/source/agents" "$CURSOR_HOME/agents" "ai-dev-"
@@ -43,11 +57,11 @@ install_links "$ROOT/source/skills" "$CURSOR_HOME/skills" "ai-dev-"
 RULES_FILE="$ROOT/USER_RULES.txt"
 COPIED=false
 if command -v wl-copy >/dev/null 2>&1; then
-  wl-copy < "$RULES_FILE" && COPIED=true
+  timeout 2 wl-copy < "$RULES_FILE" && COPIED=true
 elif command -v xclip >/dev/null 2>&1; then
-  xclip -selection clipboard < "$RULES_FILE" && COPIED=true
+  timeout 2 xclip -selection clipboard < "$RULES_FILE" && COPIED=true
 elif command -v xsel >/dev/null 2>&1; then
-  xsel --clipboard --input < "$RULES_FILE" && COPIED=true
+  timeout 2 xsel --clipboard --input < "$RULES_FILE" && COPIED=true
 fi
 
 printf '\nInstalled globally in Cursor:\n'

@@ -7,7 +7,7 @@ Task routing:
 
 Laravel defaults:
 - For a new project, use the latest stable Laravel release available at execution time.
-- Use the official Laravel React starter kit with Inertia.js, React, TypeScript, and Vite unless explicitly overridden.
+- Do not default the frontend stack. Infer Blade vs the official Inertia + React + TypeScript + Vite starter kit from the user's explicit request, or from the project's existing convention when one already exists; ask when genuinely ambiguous on a brand-new project. Both are equally valid, officially-supported choices.
 - Keep controllers thin; use Form Requests, Policies/Gates, Services/Actions/Handlers, Enums, transactions, database constraints, and focused tests where appropriate.
 
 Database and performance:

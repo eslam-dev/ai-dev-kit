@@ -1,0 +1,15 @@
+---
+description: Blade component and form conventions
+globs: "resources/views/**/*.blade.php"
+alwaysApply: false
+---
+# Blade Components and Forms
+
+- Use `@csrf` on every state-changing form.
+- Use `old()` to repopulate input after validation failures.
+- Use `@error` to display field-level validation errors beside the relevant field.
+- Prefer class-based or anonymous Blade components for repeated UI; keep them focused and prop-driven.
+- Avoid business logic and database queries inside Blade templates — resolve data in the controller or a view composer.
+- Use `@can`/`@cannot`/policies in views for UI-level display only; never treat it as the actual authorization boundary.
+- Escape output by default (`{{ }}`); use `{!! !!}` only for trusted, already-sanitized HTML.
+- Guard against duplicate form submissions on critical actions (disable-on-submit, idempotent handling).

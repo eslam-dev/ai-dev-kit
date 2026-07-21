@@ -11,6 +11,7 @@ CATEGORIES = [
     "05-project-bootstrap",
     "10-laravel",
     "15-inertia-react",
+    "16-blade",
     "20-database",
     "30-api",
     "40-security",
@@ -31,6 +32,7 @@ CATEGORY_TEMPLATE_DIRS = {
     "05-project-bootstrap": "05-project-bootstrap",
     "10-laravel": "10-laravel",
     "15-inertia-react": "15-inertia-react",
+    "16-blade": "16-blade",
     "20-database": "20-database",
     "30-api": "30-api",
     "40-security": "40-security",
@@ -110,11 +112,13 @@ def seed_curated_rules(rules: Path, root: Path) -> int:
 
     has_laravel = (root / "artisan").exists()
     has_frontend = (root / "resources/js").exists()
+    has_blade = (root / "resources/views").exists()
     gates = {
         "10-laravel": has_laravel,
         "20-database": has_laravel,
         "50-performance": has_laravel,
         "15-inertia-react": has_frontend,
+        "16-blade": has_blade,
     }
 
     seeded = 0

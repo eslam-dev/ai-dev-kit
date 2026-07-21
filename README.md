@@ -166,6 +166,7 @@ the real source.
 ├── 05-project-bootstrap/ # new-project stack defaults
 ├── 10-laravel/           # curated, seeded only when `artisan` is present
 ├── 15-inertia-react/     # curated, seeded only when `resources/js` is present
+├── 16-blade/             # curated, seeded only when `resources/views` is present
 ├── 20-database/          # curated, seeded only when `artisan` is present
 ├── 30-api/               # curated API design conventions
 ├── 40-security/          # curated secure-by-default baseline (always seeded)
@@ -181,8 +182,11 @@ the real source.
 `source/project-rules-optional/default/` (installed to
 `~/.local/share/ai-dev-kit/project-rules-optional/`), gated by the detected stack — Laravel-specific
 categories only seed when `artisan` is present, the Inertia/React category only when `resources/js` is
-present, and security/core/api/testing/review/project categories always seed. Seeding only ever writes
-files that don't already exist yet.
+present, the Blade category only when `resources/views` is present (both can seed together on a project
+that mixes the two), and security/core/api/testing/review/project categories always seed. The frontend
+stack itself is never assumed for a new project — see the `05-project-bootstrap` category, which decides
+Blade vs Inertia + React from the request or existing convention instead of defaulting to either. Seeding
+only ever writes files that don't already exist yet.
 
 **Ownership.** Once a rule exists inside a project, it belongs to that project. From then on it's
 edited, split, or removed by the dynamic maintenance flow below — never silently overwritten by a
@@ -206,10 +210,11 @@ Agents are instructed to run this automatically, so normal use never requires ty
 engineering, testing, code review, production incidents, new-project bootstrap, and the project
 intelligence/rule maintenance system itself.
 
-24 skills cover the concrete day-to-day workflow: bootstrapping a new Laravel + Inertia/React project,
-building APIs and Inertia pages, designing databases and migrations, authorizing resources, handling
-webhooks and payments, investigating N+1 queries, optimizing queries, writing tests, preparing pull
-requests and releases, security audits, and keeping the project index and rules in sync.
+25 skills cover the concrete day-to-day workflow: bootstrapping a new Laravel project (Blade or Inertia +
+React, decided per request), building APIs, Blade views, and Inertia pages, designing databases and
+migrations, authorizing resources, handling webhooks and payments, investigating N+1 queries, optimizing
+queries, writing tests, preparing pull requests and releases, security audits, and keeping the project
+index and rules in sync.
 
 ## Health check
 

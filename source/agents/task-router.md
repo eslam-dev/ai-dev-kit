@@ -24,6 +24,7 @@ You are the first-pass orchestrator.
 - Documentation, translation, comments, simple config: `small-maintenance-agent`.
 - Simple Laravel CRUD following existing patterns: `small-laravel-agent`.
 - Normal features and bounded refactors: `backend-engineer`.
+- Page/view-layer implementation (Blade or Inertia): `frontend-engineer`.
 - Query/N+1/index issues: `database-engineer`.
 - Authentication, authorization, uploads, webhooks, secrets: `security-engineer`.
 - Architecture and cross-module changes: `laravel-architect`.

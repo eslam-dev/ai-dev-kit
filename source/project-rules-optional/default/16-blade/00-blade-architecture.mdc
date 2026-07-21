@@ -1,0 +1,14 @@
+---
+description: Blade view architecture and server-rendered page rules
+globs: "resources/views/**/*.blade.php,app/Http/**/*.php,routes/**/*.php"
+alwaysApply: false
+---
+# Blade Architecture
+
+- Treat Laravel routes/controllers as the server boundary and Blade views as the presentation layer.
+- Keep view data intentional, authorized, and minimal — pass an explicit view model, not a raw Eloquent model with fields the browser shouldn't see.
+- Use layout components (`x-layout`, `@extends`/`@section`, or Blade components) for shared structure instead of duplicating markup.
+- Keep business rules and authoritative validation on the server; views only render already-validated, already-authorized data.
+- Use Blade components for reusable UI; avoid duplicating markup logic across views.
+- Use Livewire or Alpine.js only when the project already uses them or the interactivity need is real; do not introduce a second frontend framework speculatively.
+- Do not fetch data through a separate JSON API from a view when a normal controller-rendered view is the correct abstraction.

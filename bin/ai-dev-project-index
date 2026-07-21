@@ -89,6 +89,10 @@ def domain_of(rel: str) -> str:
         if len(parts) >= 4 and parts[2].lower() in {"pages", "features", "modules"}:
             return parts[3]
         return "Frontend"
+    if rel.startswith("resources/views/"):
+        if len(parts) >= 3 and parts[2].lower() not in {"layouts", "components", "partials", "vendor"}:
+            return parts[2]
+        return "Views"
     if rel.startswith("routes/"):
         return "Routes"
     if rel.startswith("database/"):
@@ -101,6 +105,13 @@ def responsibility(rel: str) -> str:
     low = rel.lower()
     checks = [
         ("routes/", "Application route definitions"),
+        # These resources/* checks must come before the generic "resource" check
+        # below, since "resource" is a substring of "resources" and would
+        # otherwise shadow every one of them.
+        ("resources/js/pages", "Inertia/React page"),
+        ("resources/js/components", "React component"),
+        ("resources/js/hooks", "React hook"),
+        ("resources/views", "Blade view / server-rendered page"),
         ("controller", "HTTP controller / entry point"),
         ("request", "Validation and request authorization"),
         ("policy", "Resource authorization"),
@@ -116,9 +127,6 @@ def responsibility(rel: str) -> str:
         ("listener", "Event listener"),
         ("observer", "Model lifecycle observer"),
         ("command", "Console command"),
-        ("resources/js/pages", "Inertia/React page"),
-        ("resources/js/components", "React component"),
-        ("resources/js/hooks", "React hook"),
         ("test", "Automated test"),
     ]
     for token, value in checks:

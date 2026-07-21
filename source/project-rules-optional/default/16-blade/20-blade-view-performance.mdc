@@ -1,0 +1,13 @@
+---
+description: Blade view rendering and query performance
+globs: "resources/views/**/*.blade.php,app/Http/**/*.php"
+alwaysApply: false
+---
+# Blade View Performance
+
+- Prevent N+1 queries before passing data to a view — eager load relations the view will access, including inside `@foreach` loops.
+- Paginate unbounded lists; never render `Model::all()` for a large dataset.
+- Avoid querying inside the view or inside a loop; resolve all data in the controller or a view composer.
+- Cache expensive, stable view fragments only with an explicit invalidation strategy.
+- Compile assets via Vite (`@vite` directive) rather than committing built assets.
+- Keep views free of heavy computation; move calculation to the controller or a dedicated view model/presenter.
