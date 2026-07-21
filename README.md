@@ -11,9 +11,11 @@ engineering. It installs once on your machine, then, for every project you work 
    Claude Code, generic agent runners that read `AGENTS.md`, and Specify/spec-kit — so every tool reads
    the same index and rules instead of re-discovering the codebase from scratch on every task.
 
-It also ships 14 specialized agents and 24 skills for the day-to-day Laravel/Inertia/React engineering
+It also ships 20 specialized agents and 27 skills for the day-to-day Laravel/Inertia/React engineering
 workflow (routing tasks, backend/frontend/database/security engineering, testing, code review,
-production incidents, new-project bootstrap, and project intelligence/rule maintenance itself).
+production incidents, new-project bootstrap, project intelligence/rule maintenance, frontend UI/UX and
+Lighthouse auditing, and — for large backlogs — a scaled team hierarchy of team leads, frontend/backend
+developers, and testers under an optional CTO).
 
 ## Why
 
@@ -206,15 +208,18 @@ Agents are instructed to run this automatically, so normal use never requires ty
 
 ## Agents & skills
 
-14 specialized agents cover: task routing, Laravel architecture, backend/frontend/database/security
-engineering, testing, code review, production incidents, new-project bootstrap, and the project
-intelligence/rule maintenance system itself.
+20 specialized agents cover: task routing, Laravel architecture, backend/frontend/database/security
+engineering, testing, code review, production incidents, new-project bootstrap, the project
+intelligence/rule maintenance system itself, and a scaled team hierarchy (`cto`, `team-lead`,
+`team-frontend-developer`, `team-backend-developer`, `team-tester`, `team-ui-ux-reviewer`) for large,
+multi-workstream backlogs.
 
-25 skills cover the concrete day-to-day workflow: bootstrapping a new Laravel project (Blade or Inertia +
+27 skills cover the concrete day-to-day workflow: bootstrapping a new Laravel project (Blade or Inertia +
 React, decided per request), building APIs, Blade views, and Inertia pages, designing databases and
 migrations, authorizing resources, handling webhooks and payments, investigating N+1 queries, optimizing
-queries, writing tests, preparing pull requests and releases, security audits, and keeping the project
-index and rules in sync.
+queries, writing tests, preparing pull requests and releases, security audits, keeping the project index
+and rules in sync, auditing frontend UI/UX and Lighthouse scores (`review-frontend-ux`), and standing up a
+scaled team (`run-project-team`) for large task lists.
 
 ## Health check
 

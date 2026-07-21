@@ -80,13 +80,14 @@ Use only when:
 - The root cause remains uncertain after initial investigation.
 - The task requires review by more than one specialist.
 
-Required team:
-- Technical Lead / Orchestrator.
-- Relevant implementation agent.
-- Database reviewer when persistence changes.
-- Security reviewer for trust-boundary or sensitive changes.
-- Test reviewer.
-- Final reviewer.
+Required team — use the `run-project-team` skill to stand this up:
+- `team-lead` per workstream (`cto` above them when the project spans more than one workstream).
+- `team-frontend-developer` / `team-backend-developer` for the relevant implementation.
+- Database reviewer (`database-engineer`) when persistence changes.
+- Security reviewer (`security-engineer`) for trust-boundary or sensitive changes.
+- `team-tester` for regression coverage.
+- `team-ui-ux-reviewer` for UI/UX, responsive, and Lighthouse checks on frontend units.
+- `reviewer` for final sign-off.
 
 ## Risk overrides
 Always escalate to Tier L or XL regardless of apparent code size when the task includes:
