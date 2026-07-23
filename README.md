@@ -26,21 +26,30 @@ connected tool to consult it before doing a broad search.
 
 ## Install
 
+Supported on **macOS and Linux** — every script targets bash 3.2+ (macOS's stock `/bin/bash`) and POSIX/BSD
+command behavior, not GNU-only flags. Requires `python3` (macOS: ships via Xcode Command Line Tools — run
+`xcode-select --install` if `python3` isn't found yet) and `bash`.
+
 ```bash
 chmod +x install.sh uninstall.sh doctor.sh
 ./install.sh
 ```
 
-This installs globally:
+That's it — no further setup. This installs globally:
 - **Commands** → symlinked into `~/.local/bin`: `ai-dev`, `ai-dev-init`, `ai-dev-project-index`,
   `ai-dev-project-rules`. Their real implementation and the curated rule template library live under
   `~/.local/share/ai-dev-kit/`.
 - **Agents & skills** → symlinked into `~/.cursor/agents/ai-dev-*` and `~/.cursor/skills/ai-dev-*`. Any
   pre-existing file at those paths is moved to a timestamped backup folder first, never deleted.
-- **User Rules** → `USER_RULES.txt` is copied to your clipboard (or its path is printed if no clipboard
-  tool is available). Paste it once into **Cursor Settings → Rules → User Rules**.
 
-Make sure `~/.local/bin` is on your `PATH`, then restart Cursor and VS Code.
+Every project then gets its rules, agents, and index fully automatically — nothing to paste, copy, or
+configure per project. Make sure `~/.local/bin` is on your `PATH`. If you use Cursor, restart it to pick up
+the new agents/skills.
+
+**Optional, one-time, global**: `USER_RULES.txt` is also copied to your clipboard during install (`pbcopy`
+on macOS, `wl-copy`/`xclip`/`xsel` on Linux — or its path is printed if none is available). Paste it into
+**Cursor Settings → Rules → User Rules** only if you also want its contents applied as a default across
+every project, on top of the per-project rules above. Skip it entirely if you don't need that.
 
 Re-running `./install.sh` any time is safe — it's idempotent and just re-syncs commands, agents, and
 skills to the current state of this repo.
