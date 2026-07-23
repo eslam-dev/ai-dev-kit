@@ -27,6 +27,7 @@ alwaysApply: true
 ---
 Before broad repository exploration, run `ai-dev .`.
 Read `.ai/project-index/PROJECT_MAP.md`, `ROUTES.md`, `RELATIONS.md`, `FILES.md`, and the relevant `DOMAINS/*.md` first.
+Use `SYMBOLS.json` for exact class/method/route lookups instead of re-reading source or grepping for them.
 Use the map to choose the smallest relevant source set.
 Open real source files when the map is incomplete, stale, uncertain, sensitive, or the code will be changed.
 After source changes, run `ai-dev .` again.
@@ -42,8 +43,9 @@ Read the project-local index in this order:
 1. `.ai/project-index/PROJECT_MAP.md`
 2. `.ai/project-index/ROUTES.md`
 3. `.ai/project-index/RELATIONS.md`
-4. Relevant `.ai/project-index/DOMAINS/*.md`
-5. `.ai/project-index/SYMBOLS.json`
+4. `.ai/project-index/FILES.md`
+5. Relevant `.ai/project-index/DOMAINS/*.md`
+6. `.ai/project-index/SYMBOLS.json`
 
 Use it to identify the smallest relevant set of real files. Verify source when data is missing, stale, uncertain, sensitive, or being modified. Refresh the index after code changes.
 EOF
@@ -57,7 +59,7 @@ At the beginning of every task, run:
 ai-dev .
 ```
 
-Always inspect `.ai/project-index/` before broad repository exploration. Start with `PROJECT_MAP.md`, `ROUTES.md`, `RELATIONS.md`, and the relevant domain map. Use the index to limit source reads. Verify real source for sensitive or changed logic. Re-run the indexer after modifications.
+Always inspect `.ai/project-index/` before broad repository exploration. Start with `PROJECT_MAP.md`, `ROUTES.md`, `RELATIONS.md`, `FILES.md`, and the relevant `DOMAINS/*.md`. Use `SYMBOLS.json` for exact class/method/route lookups instead of re-reading source. Use the index to limit source reads. Verify real source for sensitive or changed logic. Re-run the indexer after modifications.
 EOF
 
 write_if_missing "$PROJECT/AGENTS.md" <<'EOF'
@@ -68,10 +70,12 @@ All coding agents must use the project-local index first.
 1. Run `ai-dev .`.
 2. Read `.ai/project-index/PROJECT_MAP.md`.
 3. Read `.ai/project-index/ROUTES.md` and `RELATIONS.md`.
-4. Read the relevant domain map.
-5. Open only the required source files.
-6. Verify sensitive logic directly.
-7. Refresh the index after source changes.
+4. Read `.ai/project-index/FILES.md` for the affected files' domain and responsibility.
+5. Read the relevant `.ai/project-index/DOMAINS/*.md`.
+6. Use `.ai/project-index/SYMBOLS.json` for exact class/method/route lookups instead of re-reading source.
+7. Open only the required source files.
+8. Verify sensitive logic directly.
+9. Refresh the index after source changes.
 EOF
 
 write_if_missing "$PROJECT/.specify/memory/project-index.md" <<'EOF'
@@ -85,8 +89,8 @@ Specifications, plans, and implementation tasks must consult the canonical proje
 
 Before creating or updating a specification:
 - refresh the index with `ai-dev-project-index .`;
-- inspect architecture, routes, relationships, and the relevant domain;
-- reference exact file paths and symbols;
+- inspect `PROJECT_MAP.md` (architecture), `ROUTES.md`, `RELATIONS.md`, `FILES.md` (per-file responsibilities), and the relevant `DOMAINS/*.md`;
+- reference exact file paths and symbols, using `SYMBOLS.json` for exact class/method/route lookups instead of re-reading source;
 - mark inferred information as inferred;
 - verify sensitive flows against current source.
 EOF
