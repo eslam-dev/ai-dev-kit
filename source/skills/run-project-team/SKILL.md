@@ -16,8 +16,11 @@ If the backlog is small enough for one specialist, delegate directly per `task-r
    - **Single workstream** (one coherent feature area): one `team-lead` owning both the frontend and backend split directly.
    - **Large / multiple workstreams**: one `team-lead` per independent workstream, split by domain/module — not only frontend vs backend.
    - **Very large / cross-team**: add one `cto` above all team leads for cross-workstream conflicts and final sign-off.
-4. Each `team-lead` delegates its units to `team-frontend-developer` / `team-backend-developer`, then `team-tester`, then `reviewer`, per the handoff contract defined in `team-lead`.
-5. Collect status from every team lead (done/blocked/at-risk) and surface blockers to the user rather than silently absorbing them.
+4. Delegation then cascades on its own — each tier does its own part first, then hands down to the next, and reports back up to whoever handed it the work:
+   `cto` → `team-lead` → (`team-frontend-developer` / `team-backend-developer`) → `team-tester` → `team-ui-ux-reviewer` (frontend units only) → `reviewer` → done.
+   A failure at any tier goes back down to the developer that owns the file, not sideways or to the top — see each agent's own "On receiving work" section for its exact rule.
+5. The request can land on any tier, not just `cto`: if it's already scoped to one workstream, start at `team-lead` directly; if it's already a single implementation task, `run-project-team` doesn't apply at all — use `task-router` instead.
+6. Collect status from every team lead (done/blocked/at-risk) and surface blockers to the user rather than silently absorbing them.
 
 ## Concurrency
 Run genuinely independent units in parallel; keep dependent units sequential within a workstream. A large backlog can grow into dozens of agents across the run — plan the work in waves rather than assuming unlimited simultaneous capacity, since only a bounded number of agents actually execute at any one instant regardless of how many are queued.
