@@ -224,18 +224,12 @@ def main() -> None:
     old_hashes = old_manifest.get("files", {})
     records: dict[str, Any] = {}
 
-    changed = 0
-    reused = 0
     for rel, path in current_paths.items():
         h = digest(path)
         if not args.full and old_hashes.get(rel) == h and rel in old_symbols:
             records[rel] = old_symbols[rel]
-            reused += 1
         else:
             records[rel] = parse(path, rel)
-            changed += 1
-
-    removed = sorted(set(old_hashes) - set(current_paths))
 
     domains: dict[str, list[dict[str, Any]]] = defaultdict(list)
     all_routes = []
@@ -263,9 +257,6 @@ def main() -> None:
         f"- Index version: `{VERSION}`",
         f"- Detected stack: `{', '.join(framework) or 'Generic'}`",
         f"- Indexed files: `{len(records)}`",
-        f"- Updated this run: `{changed}`",
-        f"- Reused unchanged entries: `{reused}`",
-        f"- Removed since previous index: `{len(removed)}`",
         "",
         "## Domains",
         "",
@@ -335,12 +326,6 @@ def main() -> None:
     manifest = {
         "version": VERSION,
         "files": {rel: rec["hash"] for rel, rec in records.items()},
-        "stats": {
-            "indexed": len(records),
-            "updated": changed,
-            "reused": reused,
-            "removed": len(removed),
-        },
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -352,7 +337,7 @@ def main() -> None:
         )
 
     print(f"Project index: {out}")
-    print(f"Indexed: {len(records)} | updated: {changed} | reused: {reused} | removed: {len(removed)}")
+    print(f"Indexed: {len(records)} files")
 
 if __name__ == "__main__":
     main()
