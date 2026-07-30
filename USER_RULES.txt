@@ -34,7 +34,7 @@ Execution discipline:
 
 Project intelligence:
 - Before broad repository search or reading, run `ai-dev .` (initializes project adapters, refreshes the index, and syncs project rules in one step; safe and idempotent to run every time).
-- Always read `.ai/project-index/PROJECT_MAP.md`, `ROUTES.md`, `RELATIONS.md`, and the relevant domain map before opening many source files.
+- Read the index tiered: `.ai/project-index/PROJECT_MAP.md` first (stack, domains, entry points, key files), then only the relevant domain map. Grep single lines from `SYMBOLS.jsonl` for exact symbol/route lookups; read `ROUTES.md`/`RELATIONS.md`/`FILES.md` only when the task actually needs them.
 - Use the index to identify the smallest relevant file set.
 - Read the real source only when the index is missing detail, stale, uncertain, security-sensitive, or the file will be modified.
 - After code changes, update the index before finishing.

@@ -10,11 +10,16 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 IGNORE_PREFIXES = (
     ".git/", ".idea/", ".vscode/", "vendor/", "node_modules/", "storage/",
     "bootstrap/cache/", "public/build/", "dist/", "build/", "coverage/",
     ".next/", ".nuxt/", ".cache/", ".ai/project-index/",
+    # WordPress core (vendored like any other framework core, not the project's own code),
+    # the WooCommerce core plugin (third-party, thousands of files), and generated/
+    # user-uploaded content.
+    "wp-admin/", "wp-includes/", "wp-content/uploads/", "wp-content/cache/", "wp-content/upgrade/",
+    "wp-content/plugins/woocommerce/",
 )
 SOURCE_SUFFIXES = {
     ".php", ".js", ".jsx", ".ts", ".tsx", ".vue", ".py", ".go", ".java",
@@ -42,11 +47,64 @@ ROUTE = re.compile(
     r"Route::(?P<verb>get|post|put|patch|delete|options|any|match|resource|apiResource)"
     r"\s*\(\s*(?P<body>[^;\n]+)"
 )
+ROUTE_STRING = re.compile(r"['\"]([^'\"]*)['\"]")
+ROUTE_CLASS_HANDLER = re.compile(r"([A-Za-z_][\w\\]*)::class(?:\s*,\s*['\"](\w+)['\"])?")
+ROUTE_AT_HANDLER = re.compile(r"['\"]([\w\\]+@\w+)['\"]")
+HTTP_VERBS = {"get", "post", "put", "patch", "delete", "options", "head", "any"}
 RELATION = re.compile(
     r"return\s+\$this->(?P<kind>hasOne|hasMany|belongsTo|belongsToMany|morphOne|morphMany|morphTo|morphToMany|hasOneThrough|hasManyThrough)"
     r"\s*\(\s*(?P<target>[^,\)]+)"
 )
+HOOK = re.compile(
+    r"(?P<verb>add_action|add_filter|do_action|apply_filters|add_shortcode|register_rest_route)"
+    r"\s*\(\s*(?P<body>[^;\n]+)"
+)
 TABLE = re.compile(r"(?:Schema::(?:create|table)|protected\s+\$table\s*=)\s*\(?\s*['\"]([^'\"]+)['\"]")
+
+# (path token, short code, human label) — codes keep the generated tables small;
+# the full legend is emitted once in PROJECT_MAP.md.
+RESPONSIBILITIES = [
+    ("routes/", "routes", "Application route definitions"),
+    # These resources/* checks must come before the generic "resource" check
+    # below, since "resource" is a substring of "resources" and would
+    # otherwise shadow every one of them.
+    ("resources/js/pages", "page", "Inertia/React page"),
+    ("resources/js/components", "comp", "React component"),
+    ("resources/js/hooks", "hook", "React hook"),
+    ("resources/views", "view", "Blade view / server-rendered page"),
+    ("controller", "ctrl", "HTTP controller / entry point"),
+    ("request", "req", "Validation and request authorization"),
+    ("policy", "policy", "Resource authorization"),
+    ("middleware", "mw", "HTTP middleware"),
+    ("resource", "apires", "API/data transformation"),
+    ("model", "model", "Persistence model"),
+    ("migration", "migr", "Database schema migration"),
+    ("service", "svc", "Application/domain service"),
+    ("action", "action", "Single-purpose application action"),
+    ("handler", "handler", "Application/domain handler"),
+    ("job", "job", "Queued/background job"),
+    ("event", "event", "Application/domain event"),
+    ("listener", "listen", "Event listener"),
+    ("observer", "observe", "Model lifecycle observer"),
+    ("command", "cmd", "Console command"),
+    ("test", "test", "Automated test"),
+    # Kept narrow (full path segments, not bare words like "admin"/"template")
+    # to avoid mislabeling unrelated non-WordPress files.
+    ("wp-content/mu-plugins", "wp-mu", "WordPress must-use plugin"),
+    ("wp-content/plugins", "wp-plugin", "WordPress plugin"),
+    ("wp-content/themes", "wp-theme", "WordPress theme"),
+    ("woocommerce", "woo", "WooCommerce extension/customization"),
+    ("shortcode", "shortcode", "WordPress shortcode handler"),
+]
+DEFAULT_RESPONSIBILITY = ("src", "Project source or configuration")
+LEGEND = {code: label for _, code, label in RESPONSIBILITIES}
+LEGEND[DEFAULT_RESPONSIBILITY[0]] = DEFAULT_RESPONSIBILITY[1]
+# Order used to pick the "key files" shown per domain in PROJECT_MAP.md.
+KEY_FILE_PRIORITY = [
+    "ctrl", "model", "svc", "routes", "page", "view", "policy", "action",
+    "handler", "job", "apires", "req",
+    "wp-plugin", "wp-theme", "wp-mu", "shortcode", "woo",
+]
 
 def digest(path: Path) -> str:
     h = hashlib.sha256()
@@ -99,40 +157,53 @@ def domain_of(rel: str) -> str:
         return "Database"
     if rel.startswith("tests/"):
         return "Tests"
+    if rel.startswith("wp-content/plugins/"):
+        return parts[2] if len(parts) > 2 else "Plugins"
+    if rel.startswith("wp-content/themes/"):
+        return parts[2] if len(parts) > 2 else "Themes"
+    if rel.startswith("wp-content/mu-plugins/"):
+        return "Must-Use Plugins"
     return parts[0] if parts else "Root"
 
 def responsibility(rel: str) -> str:
     low = rel.lower()
-    checks = [
-        ("routes/", "Application route definitions"),
-        # These resources/* checks must come before the generic "resource" check
-        # below, since "resource" is a substring of "resources" and would
-        # otherwise shadow every one of them.
-        ("resources/js/pages", "Inertia/React page"),
-        ("resources/js/components", "React component"),
-        ("resources/js/hooks", "React hook"),
-        ("resources/views", "Blade view / server-rendered page"),
-        ("controller", "HTTP controller / entry point"),
-        ("request", "Validation and request authorization"),
-        ("policy", "Resource authorization"),
-        ("middleware", "HTTP middleware"),
-        ("resource", "API/data transformation"),
-        ("model", "Persistence model"),
-        ("migration", "Database schema migration"),
-        ("service", "Application/domain service"),
-        ("action", "Single-purpose application action"),
-        ("handler", "Application/domain handler"),
-        ("job", "Queued/background job"),
-        ("event", "Application/domain event"),
-        ("listener", "Event listener"),
-        ("observer", "Model lifecycle observer"),
-        ("command", "Console command"),
-        ("test", "Automated test"),
-    ]
-    for token, value in checks:
+    for token, code, _label in RESPONSIBILITIES:
         if token in low:
-            return value
-    return "Project source or configuration"
+            return code
+    return DEFAULT_RESPONSIBILITY[0]
+
+def parse_hook(verb: str, body: str) -> dict[str, str]:
+    strings = ROUTE_STRING.findall(body)
+    # register_rest_route(namespace, route, ...) — the endpoint is the first
+    # two strings combined; every other hook names itself in the first string.
+    if verb == "register_rest_route" and len(strings) > 1:
+        strings = [strings[0].rstrip("/") + "/" + strings[1].lstrip("/")] + strings[2:]
+    uri = strings[0] if strings else ""
+    handler = ""
+    m = ROUTE_CLASS_HANDLER.search(body)
+    if m:
+        cls = m.group(1).rsplit("\\", 1)[-1]
+        handler = f"{cls}@{m.group(2)}" if m.group(2) else cls
+    else:
+        # Skip the literal 'callback' array key so ['callback' => 'fn'] maps to fn.
+        candidates = [s for s in strings[1:] if s != "callback"]
+        if candidates:
+            handler = candidates[0].rsplit("\\", 1)[-1]
+    return {"method": verb, "uri": uri, "handler": handler or "closure"}
+
+def parse_route(verb: str, body: str) -> dict[str, str]:
+    strings = ROUTE_STRING.findall(body)
+    uri = next((s for s in strings if s.lower() not in HTTP_VERBS and "@" not in s), strings[0] if strings else "")
+    handler = ""
+    m = ROUTE_CLASS_HANDLER.search(body)
+    if m:
+        cls = m.group(1).rsplit("\\", 1)[-1]
+        handler = f"{cls}@{m.group(2)}" if m.group(2) else cls
+    else:
+        m = ROUTE_AT_HANDLER.search(body)
+        if m:
+            handler = m.group(1).rsplit("\\", 1)[-1]
+    return {"method": verb.upper(), "uri": uri, "handler": handler or "closure"}
 
 def parse(path: Path, rel: str) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8", errors="replace")
@@ -152,16 +223,18 @@ def parse(path: Path, rel: str) -> dict[str, Any]:
                 symbols.append({"kind": m.group("kind"), "name": m.group("type")})
         imports = [m.group(1).strip() for m in PHP_USE.finditer(text)]
         for m in ROUTE.finditer(text):
-            routes.append({
-                "method": m.group("verb").upper(),
-                "definition": " ".join(m.group("body").split())[:600],
-            })
+            routes.append(parse_route(m.group("verb"), m.group("body")))
         for m in RELATION.finditer(text):
             relations.append({
                 "kind": "eloquent",
                 "type": m.group("kind"),
                 "target": " ".join(m.group("target").split())[:200],
             })
+        # WordPress hooks/filters/shortcodes/REST routes are that ecosystem's
+        # entry points, the same role Route:: calls play for Laravel — surface
+        # them through the same `routes` field so they land in ROUTES.md for free.
+        for m in HOOK.finditer(text):
+            routes.append(parse_hook(m.group("verb"), m.group("body")))
     elif path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx", ".vue"}:
         for m in JS_DECL.finditer(text):
             name = m.group("func") or m.group("const") or m.group("class")
@@ -181,9 +254,27 @@ def parse(path: Path, rel: str) -> dict[str, Any]:
         "routes": routes,
         "relations": relations,
         "tables": tables,
-        "hash": digest(path),
-        "size": path.stat().st_size,
     }
+
+def internal_import_filter(records: dict[str, Any]):
+    # Keep only project-internal imports in RELATIONS.md: PHP imports whose
+    # root namespace is declared somewhere in this project, and relative or
+    # aliased JS imports. Framework/vendor imports stay out of the generated
+    # markdown (they remain available in SYMBOLS.jsonl).
+    php_roots = set()
+    for rec in records.values():
+        ns = rec.get("namespace")
+        if ns:
+            php_roots.add(ns.split("\\")[0])
+
+    def is_internal(imp: str) -> bool:
+        if imp.startswith(("./", "../", "@/", "~/")):
+            return True
+        if "\\" in imp:
+            return imp.split("\\")[0] in php_roots
+        return False
+
+    return is_internal
 
 def markdown_table(headers: list[str], rows: list[list[str]]) -> str:
     out = ["| " + " | ".join(headers) + " |", "|" + "|".join(["---"] * len(headers)) + "|"]
@@ -204,7 +295,8 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     domains_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = out / "manifest.json"
-    symbols_path = out / "SYMBOLS.json"
+    symbols_path = out / "SYMBOLS.jsonl"
+    legacy_symbols_path = out / "SYMBOLS.json"
 
     old_manifest = {}
     old_symbols: dict[str, Any] = {}
@@ -213,9 +305,16 @@ def main() -> None:
             old_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except Exception:
             old_manifest = {}
-    if not args.full and symbols_path.exists():
+    # A version bump invalidates cached records: their shape (route fields,
+    # responsibility codes, ...) may have changed with the format.
+    if old_manifest.get("version") != VERSION:
+        old_manifest = {}
+    if not args.full and old_manifest and symbols_path.exists():
         try:
-            old_symbols = json.loads(symbols_path.read_text(encoding="utf-8")).get("files", {})
+            for line in symbols_path.read_text(encoding="utf-8").splitlines():
+                rec = json.loads(line)
+                if "path" in rec:
+                    old_symbols[rec["path"]] = rec
         except Exception:
             old_symbols = {}
 
@@ -223,9 +322,11 @@ def main() -> None:
     current_paths = {p.relative_to(root).as_posix(): p for p in files}
     old_hashes = old_manifest.get("files", {})
     records: dict[str, Any] = {}
+    manifest_files: dict[str, str] = {}
 
     for rel, path in current_paths.items():
         h = digest(path)
+        manifest_files[rel] = h
         if not args.full and old_hashes.get(rel) == h and rel in old_symbols:
             records[rel] = old_symbols[rel]
         else:
@@ -246,11 +347,18 @@ def main() -> None:
         framework.append("Laravel")
     if (root / "resources/js").exists():
         framework.append("JavaScript/TypeScript frontend")
+    if (root / "wp-content").exists() or (root / "wp-load.php").exists() or (root / "wp-config.php").exists():
+        framework.append("WordPress")
+    if (root / "wp-content/plugins/woocommerce").exists():
+        framework.append("WooCommerce")
     if (root / "composer.json").exists():
         framework.append("Composer")
     if (root / "package.json").exists():
         framework.append("Node.js")
 
+    # PROJECT_MAP.md is the tier-1 read: stack, domains, entry points, legend,
+    # and a few key files per domain — most tasks should need only this file
+    # plus one DOMAINS/*.md.
     project_map = [
         "# Project Map",
         "",
@@ -266,34 +374,54 @@ def main() -> None:
     project_map += ["", "## Primary entry points", ""]
     for candidate in ["routes/web.php", "routes/api.php", "routes/console.php", "app/Http/Kernel.php", "bootstrap/app.php", "resources/js/app.tsx", "resources/js/app.jsx"]:
         if candidate in records:
-            project_map.append(f"- `{candidate}` — {records[candidate]['responsibility']}")
+            project_map.append(f"- `{candidate}` — {LEGEND[records[candidate]['responsibility']]}")
+    project_map += ["", "## Key files per domain", ""]
+    priority = {code: i for i, code in enumerate(KEY_FILE_PRIORITY)}
+    for name in sorted(domains):
+        ranked = sorted(
+            (r for r in domains[name] if r["responsibility"] in priority),
+            key=lambda r: (priority[r["responsibility"]], r["path"]),
+        )[:8]
+        if not ranked:
+            continue
+        project_map.append(f"### {name}")
+        for rec in ranked:
+            project_map.append(f"- `{rec['path']}` ({rec['responsibility']})")
+        project_map.append("")
+    project_map += [
+        "## Responsibility codes",
+        "",
+        ", ".join(f"`{code}`={label}" for code, label in sorted(LEGEND.items())),
+    ]
     (out / "PROJECT_MAP.md").write_text("\n".join(project_map) + "\n", encoding="utf-8")
 
-    route_rows = [[r["method"], r["file"], r["definition"]] for r in all_routes]
+    route_rows = [[r["method"], r["uri"], r["handler"], r["file"]] for r in all_routes]
     routes_md = "# Routes\n\n"
-    routes_md += markdown_table(["Method", "File", "Definition"], route_rows) if route_rows else "_No routes detected._"
+    routes_md += markdown_table(["Method", "URI", "Handler", "File"], route_rows) if route_rows else "_No routes detected._"
     (out / "ROUTES.md").write_text(routes_md + "\n", encoding="utf-8")
 
-    file_rows = []
-    for rel in sorted(records):
-        rec = records[rel]
-        syms = ", ".join(s["name"] for s in rec["symbols"][:8])
-        file_rows.append([rel, rec["domain"], rec["responsibility"], syms])
-    (out / "FILES.md").write_text(
-        "# Files\n\n" + markdown_table(["Path", "Domain", "Responsibility", "Symbols"], file_rows) + "\n",
-        encoding="utf-8"
-    )
+    # FILES.md is a compact path -> domain map; per-file symbols live in
+    # DOMAINS/*.md and SYMBOLS.jsonl instead of being duplicated here.
+    files_md = ["# Files", "", "Responsibility codes: see PROJECT_MAP.md.", ""]
+    for name in sorted(domains):
+        files_md.append(f"## {name} ({len(domains[name])})")
+        for rec in sorted(domains[name], key=lambda r: r["path"]):
+            files_md.append(f"- {rec['path']} ({rec['responsibility']})")
+        files_md.append("")
+    (out / "FILES.md").write_text("\n".join(files_md).rstrip() + "\n", encoding="utf-8")
 
+    is_internal = internal_import_filter(records)
     relation_rows = []
     for rel in sorted(records):
         rec = records[rel]
-        for imp in rec["imports"][:20]:
+        internal_imports = [imp for imp in rec["imports"] if is_internal(imp)]
+        for imp in internal_imports[:20]:
             relation_rows.append([rel, "import", imp])
         for relation in rec["relations"]:
             relation_rows.append([rel, relation["type"], relation["target"]])
         for table in rec["tables"]:
             relation_rows.append([rel, "table", table])
-    relations_md = "# Relationships\n\n"
+    relations_md = "# Relationships\n\nProject-internal imports only; full import lists live in SYMBOLS.jsonl.\n\n"
     relations_md += markdown_table(["Source", "Relation", "Target"], relation_rows) if relation_rows else "_No relationships detected._"
     (out / "RELATIONS.md").write_text(relations_md + "\n", encoding="utf-8")
 
@@ -311,21 +439,25 @@ def main() -> None:
                 ", ".join(s["name"] for s in rec["symbols"][:10]),
             ])
         dest.write_text(
-            f"# Domain: {name}\n\n" + markdown_table(["File", "Responsibility", "Symbols"], rows) + "\n",
+            f"# Domain: {name}\n\nResponsibility codes: see PROJECT_MAP.md.\n\n"
+            + markdown_table(["File", "Resp", "Symbols"], rows) + "\n",
             encoding="utf-8"
         )
     for stale in existing_domain_files - generated_domain_files:
         stale.unlink()
 
-    symbols_payload = {
-        "version": VERSION,
-        "files": records,
-    }
-    symbols_path.write_text(json.dumps(symbols_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    # One compact JSON record per line so exact lookups are a single-line
+    # grep instead of a whole-file read.
+    symbol_lines = [json.dumps({"version": VERSION, "files": len(records)}, ensure_ascii=False, separators=(",", ":"))]
+    for rel in sorted(records):
+        symbol_lines.append(json.dumps(records[rel], ensure_ascii=False, separators=(",", ":")))
+    symbols_path.write_text("\n".join(symbol_lines) + "\n", encoding="utf-8")
+    if legacy_symbols_path.exists():
+        legacy_symbols_path.unlink()
 
     manifest = {
         "version": VERSION,
-        "files": {rel: rec["hash"] for rel, rec in records.items()},
+        "files": manifest_files,
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 

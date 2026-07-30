@@ -17,12 +17,12 @@ Maintain the persistent index located at:
 - Inspect only the smallest relevant source set.
 
 ## Index contents
-- `PROJECT_MAP.md`: architecture and project overview.
-- `ROUTES.md`: routes, methods, names, middleware, handlers, and frontend destinations when detectable.
-- `FILES.md`: file responsibility and symbol inventory.
-- `RELATIONS.md`: imports, dependencies, model relations, and cross-file links.
-- `SYMBOLS.json`: machine-readable symbols and metadata.
-- `DOMAINS/`: per-domain/module summaries.
+- `PROJECT_MAP.md`: tier-1 overview — stack, domains, entry points, key files per domain, responsibility-code legend.
+- `DOMAINS/`: per-domain/module file tables (the tier-2 read).
+- `SYMBOLS.jsonl`: one compact JSON record per file — grep single lines for exact lookups, never read whole.
+- `ROUTES.md`: method, URI, handler, defining file (on demand).
+- `RELATIONS.md`: project-internal imports, model relations, tables (on demand).
+- `FILES.md`: compact path → domain inventory (on demand).
 - `manifest.json`: hashes and indexing metadata.
 
 ## Required mapping

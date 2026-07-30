@@ -18,13 +18,12 @@ You are responsible for project-specific rule generation and maintenance.
 
 ## Source of Context
 
-Use in this order:
-1. `.ai/project-index/PROJECT_MAP.md`
-2. `.ai/project-index/FILES.md`
-3. `.ai/project-index/ROUTES.md`
-4. `.ai/project-index/RELATIONS.md`
-5. relevant `.ai/project-index/DOMAINS/*.md`
-6. actual source files where verification is required
+Use in this order — stop as soon as you have enough context:
+1. `.ai/project-index/PROJECT_MAP.md` (stack, domains, entry points, key files)
+2. relevant `.ai/project-index/DOMAINS/*.md`
+3. grep single lines from `.ai/project-index/SYMBOLS.jsonl` for exact symbol/route lookups (never read it whole)
+4. on demand: `ROUTES.md`, `RELATIONS.md`, `FILES.md`
+5. actual source files where verification is required
 
 ## Large Projects
 

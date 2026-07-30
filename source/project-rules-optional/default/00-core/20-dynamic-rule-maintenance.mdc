@@ -46,7 +46,7 @@ Also ensure:
     ├── ROUTES.md
     ├── FILES.md
     ├── RELATIONS.md
-    ├── SYMBOLS.json
+    ├── SYMBOLS.jsonl
     ├── manifest.json
     └── DOMAINS/
 ```

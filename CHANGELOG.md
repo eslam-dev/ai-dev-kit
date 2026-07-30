@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.2.0
+
+Token-efficiency overhaul of the project intelligence index (index format version `1.2.0`; old-format
+indexes are rebuilt automatically on the next run).
+
+- **Tiered reading workflow.** All adapter files, agents, skills, and rules now instruct tools to read
+  `PROJECT_MAP.md` first, then only the one relevant `DOMAINS/*.md` — instead of reading the entire
+  index (`ROUTES.md`, `RELATIONS.md`, `FILES.md`, …) on every task. Those files are now on-demand only.
+  On a ~120-file benchmark project this cuts the default per-task index read by ~93%.
+- **`PROJECT_MAP.md` is now a self-sufficient tier-1 summary**: stack, domains, entry points, key files
+  per domain, and the responsibility-code legend.
+- **`SYMBOLS.json` → `SYMBOLS.jsonl`**: one compact JSON record per file, so exact class/method/route
+  lookups are a single-line `grep` instead of a whole-file read (~46% smaller on disk too). The legacy
+  `SYMBOLS.json` is removed automatically. Per-record `hash`/`size` fields dropped (hashes live in
+  `manifest.json`).
+- **`RELATIONS.md` lists project-internal imports only** (project PHP namespaces, relative/aliased JS
+  imports) — framework/vendor noise is gone (~86% smaller); full import lists remain in `SYMBOLS.jsonl`.
+- **`ROUTES.md` parses routes** into `Method | URI | Handler | File` instead of embedding up to 600
+  raw characters of route definition per row.
+- **`FILES.md` is a compact path → domain inventory**; per-file symbols live only in `DOMAINS/*.md`
+  and `SYMBOLS.jsonl` instead of being duplicated.
+- **Short responsibility codes** (`ctrl`, `model`, `svc`, `migr`, …) replace repeated long phrases in
+  all generated tables, with the legend emitted once in `PROJECT_MAP.md`.
+
 ## 1.0.0
 
 Initial release.

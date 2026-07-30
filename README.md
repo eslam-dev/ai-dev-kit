@@ -91,13 +91,13 @@ overwritten once it exists, and the index/rules generation only touches what act
 
 ```text
 .ai/project-index/
-├── PROJECT_MAP.md     # architecture overview, detected stack, domains, primary entry points
-├── ROUTES.md           # every route found, with method and defining file
-├── FILES.md            # every indexed file: path, domain, responsibility, symbols
-├── RELATIONS.md        # imports, Eloquent relations, and database tables per file
-├── SYMBOLS.json        # the same data as structured JSON, for exact lookups
-├── manifest.json       # per-file SHA-256 hashes + run stats, used for incremental updates
-└── DOMAINS/             # one markdown file per discovered domain/module
+├── PROJECT_MAP.md     # tier-1 read: stack, domains, entry points, key files per domain, code legend
+├── DOMAINS/            # tier-2 read: one markdown file per discovered domain/module
+├── SYMBOLS.jsonl       # one compact JSON record per file — grep a single line for exact lookups
+├── ROUTES.md           # on demand: method, URI, handler, defining file
+├── RELATIONS.md        # on demand: project-internal imports, Eloquent relations, database tables
+├── FILES.md            # on demand: compact path → domain inventory
+└── manifest.json       # per-file SHA-256 hashes, used for incremental updates
 ```
 
 For each relevant source file it captures:
@@ -139,10 +139,11 @@ AGENTS.md
 .specify/memory/project-index.md
 ```
 
-Each one tells its respective tool the same thing: check the index before broad exploration, read
-`PROJECT_MAP.md` / `ROUTES.md` / `RELATIONS.md` / the relevant domain map first, open real source files
-only when the index is missing, stale, uncertain, sensitive, or about to be modified, and refresh the
-index after making changes. So the same workflow works across:
+Each one tells its respective tool the same thing: check the index before broad exploration, read it
+**tiered** — `PROJECT_MAP.md` first (often enough on its own), then only the relevant domain map, then
+single-line greps into `SYMBOLS.jsonl` for exact lookups — open real source files only when the index
+is missing, stale, uncertain, sensitive, or about to be modified, and refresh the index after making
+changes. So the same workflow works across:
 
 - Cursor
 - VS Code + GitHub Copilot
@@ -158,10 +159,11 @@ survive every future `ai-dev` run.
 Every agent working in a project is expected to:
 
 1. Run `ai-dev .`.
-2. Read the index before searching broadly.
-3. Use it to narrow down to the smallest relevant set of files.
-4. Open the real source when the index data is missing, stale, or sensitive.
-5. Refresh the index after making changes.
+2. Read `PROJECT_MAP.md`, then only the relevant `DOMAINS/*.md` — stop as soon as the work is located.
+3. Grep single lines from `SYMBOLS.jsonl` for exact class/method/route lookups instead of re-reading source.
+4. Use the index to narrow down to the smallest relevant set of files.
+5. Open the real source when the index data is missing, stale, or sensitive.
+6. Refresh the index after making changes.
 
 The index is explicitly **not** treated as authoritative for security, payments, authorization, tenancy,
 concurrency, migrations, destructive operations, or production incidents — those always require reading

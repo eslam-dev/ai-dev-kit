@@ -16,12 +16,11 @@ For every task inside an existing project:
    ```bash
    ai-dev-project-index .
    ```
-4. Read these files first:
-   - `.ai/project-index/PROJECT_MAP.md`
-   - `.ai/project-index/ROUTES.md`
-   - `.ai/project-index/RELATIONS.md`
-   - `.ai/project-index/FILES.md`
-   - the relevant file under `.ai/project-index/DOMAINS/`
+4. Read tiered — stop as soon as the work is located:
+   - `.ai/project-index/PROJECT_MAP.md` (stack, domains, entry points, key files) — often enough on its own;
+   - the one relevant file under `.ai/project-index/DOMAINS/`;
+   - exact symbol/route lookups: grep a single line from `.ai/project-index/SYMBOLS.jsonl` (one JSON record per file) — never read it whole;
+   - on demand only: `ROUTES.md` (routing questions), `RELATIONS.md` (dependency tracing), `FILES.md` (full inventory).
 5. Use the index to select the smallest relevant set of source files.
 6. Open real source files only when the index is incomplete, stale, uncertain, security-sensitive, or the files will be changed.
 7. After modifying source code, run `ai-dev-project-index .` again before completion.

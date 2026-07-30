@@ -15,11 +15,10 @@ Run automatically after meaningful source changes and before task completion.
    ai-dev-project-index .
    ```
 2. Read changed and related entries from:
-   - `.ai/project-index/manifest.json`
-   - `.ai/project-index/FILES.md`
-   - `.ai/project-index/RELATIONS.md`
-   - `.ai/project-index/ROUTES.md`
+   - `.ai/project-index/manifest.json` (which files changed)
    - relevant `.ai/project-index/DOMAINS/*.md`
+   - grep single lines from `.ai/project-index/SYMBOLS.jsonl` for the changed files' symbols
+   - on demand: `ROUTES.md`, `RELATIONS.md`, `FILES.md`
 3. Ensure `.cursor/rules/` has the standard category structure.
 4. Match affected concepts to existing rule files by scope and content.
 5. Update the smallest relevant rules.
