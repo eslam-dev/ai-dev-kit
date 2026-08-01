@@ -7,7 +7,7 @@ alwaysApply: false
 - Every migration must have a safe, accurate `down()` when rollback is realistic.
 - Preserve existing data when adding required fields: add nullable/default, backfill, then constrain when needed.
 - Add foreign keys and indexes deliberately, considering existing production data.
-- Avoid destructive changes without an explicit rollout and backup strategy.
+- Never run `migrate:fresh`, `migrate:refresh`, `migrate:reset`, `db:wipe`, `DROP`, `TRUNCATE`, or delete database files in any environment without explicit user approval; destructive schema changes also need a rollout and backup strategy.
 - Do not perform large application-level data loops inside blocking schema migrations.
 - Use decimal/integer minor units for money; never floating point.
 - Store timestamps and timezone behavior consistently with the project.

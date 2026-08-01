@@ -17,4 +17,5 @@ Security is a release requirement, not an optional review.
 - Apply rate limits to authentication, OTP, password reset, invitations, uploads, exports, webhooks, search, and expensive endpoints.
 - Review new dependencies for vulnerabilities, maintenance status, permissions, and necessity.
 - Never disable TLS verification, CSRF, signatures, validation, authorization, or security headers to make an integration work.
+- Never run destructive database operations in any environment (`DROP`, `TRUNCATE`, `migrate:fresh`/`refresh`/`reset`, `db:wipe`, deleting DB files, redis flushes) without explicit user approval in the current session.
 - Unresolved Critical or High security issues block completion.

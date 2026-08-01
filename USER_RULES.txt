@@ -18,7 +18,7 @@ Security:
 - Never trust client prices, roles, permissions, payment status, totals, ownership, or workflow states.
 - Prevent SQL/command/template injection, XSS, IDOR, SSRF, unsafe uploads, replayed webhooks, secret leakage, and sensitive logging.
 - Payments and critical state transitions must be verified, idempotent, transactional, concurrency-safe, and auditable.
-- Never perform destructive production operations without explicit user approval and a verified backup/rollback path.
+- Never run destructive database operations in ANY environment — `DROP` (table/database/schema), `TRUNCATE`, `migrate:fresh`/`migrate:refresh`/`migrate:reset`, `db:wipe`, deleting database files, bulk unscoped deletes, or cache/redis flushes — without explicit user approval in the current session. Prefer non-destructive alternatives (plain `migrate`, targeted rollbacks). Production additionally requires a verified backup/rollback path.
 
 Execution discipline:
 - Inspect existing project patterns before changing code. Make the smallest safe change; do not modify unrelated files. Preserve backward compatibility unless explicitly requested.
