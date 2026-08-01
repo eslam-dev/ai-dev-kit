@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0
+
+- **`ai-dev update [projects...]`**: propagates kit rule updates into already-seeded projects. Seeding now
+  records a content hash per rule in `.cursor/rules/.seed-manifest.json`; `update` refreshes copies the
+  project never edited, keeps and lists customized ones (`--force` overwrites those too). Accepts multiple
+  project paths.
+- **Destructive database operations require explicit user approval** in any environment (`DROP`, `TRUNCATE`,
+  `migrate:fresh`/`refresh`/`reset`, `db:wipe`, deleting DB files, redis flushes) — enforced in
+  `USER_RULES.txt`, the always-on security rule, the migrations rule, and the database-engineer agent.
+- Fixed `ai-dev-project-rules` domain discovery reading the removed `SYMBOLS.json` (now reads
+  `SYMBOLS.jsonl`, with legacy fallback).
+- Compressed the always-loaded rules (`USER_RULES.txt`, agent/model router, new-project stack, dynamic rule
+  maintenance) — same constraints, ~1,100 fewer tokens per prompt.
+
 ## 1.2.0
 
 Token-efficiency overhaul of the project intelligence index (index format version `1.2.0`; old-format

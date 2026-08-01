@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -85,14 +86,32 @@ Do not use a fixed change-type mapping table. Discover affected rule scopes from
 """,
 }
 
+SEED_MANIFEST = ".seed-manifest.json"
+
 def slug(value: str) -> str:
     value = re.sub(r"[^a-zA-Z0-9._-]+", "-", value.strip()).strip("-").lower()
     return value or "general"
 
-def write_if_missing(path: Path, content: str) -> None:
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content.rstrip() + "\n", encoding="utf-8")
+def sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+def normalize(text: str) -> str:
+    return text.rstrip() + "\n"
+
+def load_seed_manifest(rules: Path) -> dict[str, str]:
+    path = rules / SEED_MANIFEST
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+        except Exception:
+            pass
+    return {}
+
+def save_seed_manifest(rules: Path, manifest: dict[str, str]) -> None:
+    path = rules / SEED_MANIFEST
+    path.write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
 def find_template_root() -> Path | None:
     script_dir = Path(__file__).resolve().parent
@@ -105,10 +124,12 @@ def find_template_root() -> Path | None:
             return candidate
     return None
 
-def seed_curated_rules(rules: Path, root: Path) -> int:
+def template_map(root: Path) -> dict[str, str]:
+    """All template files that apply to this project: {dest relpath under .cursor/rules: content}."""
+    result = dict(BASE_RULES)
     template_root = find_template_root()
     if template_root is None:
-        return 0
+        return result
 
     has_laravel = (root / "artisan").exists()
     has_frontend = (root / "resources/js").exists()
@@ -121,7 +142,6 @@ def seed_curated_rules(rules: Path, root: Path) -> int:
         "16-blade": has_blade,
     }
 
-    seeded = 0
     for category, template_dir in CATEGORY_TEMPLATE_DIRS.items():
         if not gates.get(category, True):
             continue
@@ -129,19 +149,78 @@ def seed_curated_rules(rules: Path, root: Path) -> int:
         if not src_dir.is_dir():
             continue
         for src_file in sorted(src_dir.glob("*.mdc")):
-            excl_key = f"{template_dir}/{src_file.name}"
-            if excl_key in TEMPLATE_EXCLUDES:
+            if f"{template_dir}/{src_file.name}" in TEMPLATE_EXCLUDES:
                 continue
-            dest = rules / category / src_file.name
-            if dest.exists():
-                continue
-            write_if_missing(dest, src_file.read_text(encoding="utf-8"))
+            result[f"{category}/{src_file.name}"] = src_file.read_text(encoding="utf-8")
+    return result
+
+def sync_templates(rules: Path, root: Path, update: bool, force: bool):
+    """Seed missing templates; with update=True also refresh unmodified seeded copies.
+
+    A project copy is only overwritten when its content still matches the hash
+    recorded at seed time (i.e. the project never edited it), or with force=True.
+    Locally modified copies are reported and left alone.
+    """
+    manifest = load_seed_manifest(rules)
+    seeded = updated = 0
+    skipped: list[str] = []
+
+    for rel, raw in template_map(root).items():
+        content = normalize(raw)
+        dest = rules / rel
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+            manifest[rel] = sha256(content)
             seeded += 1
-    return seeded
+            continue
+
+        current = dest.read_text(encoding="utf-8")
+        if current == content:
+            manifest.setdefault(rel, sha256(content))
+            continue
+        if not update:
+            continue
+        # Unmodified since seeding (hash matches what we wrote) → safe to refresh.
+        if force or manifest.get(rel) == sha256(current):
+            dest.write_text(content, encoding="utf-8")
+            manifest[rel] = sha256(content)
+            updated += 1
+        else:
+            skipped.append(rel)
+
+    save_seed_manifest(rules, manifest)
+    return seeded, updated, skipped
+
+def project_domains(index: Path) -> set[str]:
+    domains: set[str] = set()
+    jsonl = index / "SYMBOLS.jsonl"
+    legacy = index / "SYMBOLS.json"
+    try:
+        if jsonl.exists():
+            for line in jsonl.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                domain = json.loads(line).get("domain")
+                if domain:
+                    domains.add(str(domain))
+        elif legacy.exists():
+            payload = json.loads(legacy.read_text(encoding="utf-8"))
+            for record in payload.get("files", {}).values():
+                domain = record.get("domain")
+                if domain:
+                    domains.add(str(domain))
+    except Exception:
+        pass
+    return domains
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("project", nargs="?", default=".")
+    parser.add_argument("--update", action="store_true",
+                        help="refresh seeded rules to the current templates (skips locally modified copies)")
+    parser.add_argument("--force", action="store_true",
+                        help="with --update: overwrite locally modified copies too")
     args = parser.parse_args()
 
     root = Path(args.project).resolve()
@@ -151,25 +230,9 @@ def main() -> None:
     for category in CATEGORIES:
         (rules / category).mkdir(parents=True, exist_ok=True)
 
-    for rel, content in BASE_RULES.items():
-        write_if_missing(rules / rel, content)
+    seeded, updated, skipped = sync_templates(rules, root, args.update, args.force)
 
-    seeded = seed_curated_rules(rules, root)
-
-    manifest_path = index / "manifest.json"
-    symbols_path = index / "SYMBOLS.json"
-
-    domains = set()
-    if symbols_path.exists():
-        try:
-            payload = json.loads(symbols_path.read_text(encoding="utf-8"))
-            for record in payload.get("files", {}).values():
-                domain = record.get("domain")
-                if domain:
-                    domains.add(str(domain))
-        except Exception:
-            pass
-
+    domains = project_domains(index)
     for domain in sorted(domains):
         safe = slug(domain)
         domain_dir = rules / "65-domain" / safe
@@ -199,7 +262,12 @@ Do not turn this file into a complete file inventory.
             )
 
     print(f"Project rules initialized: {rules}")
-    print(f"Categories: {len(CATEGORIES)} | curated rules seeded: {seeded} | domains: {len(domains)}")
+    line = f"Categories: {len(CATEGORIES)} | seeded: {seeded} | domains: {len(domains)}"
+    if args.update:
+        line += f" | updated: {updated} | kept (locally modified): {len(skipped)}"
+    print(line)
+    for rel in skipped:
+        print(f"  kept: {rel} (locally modified — rerun with --force to overwrite)")
 
 if __name__ == "__main__":
     main()

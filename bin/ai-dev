@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ai-dev [project]              init + index + seed rules (default: .)
+# ai-dev update [projects...]   also refresh seeded rules to the current kit
+#                               templates in one or more projects (skips
+#                               locally modified copies; see --force below)
+# ai-dev update --force [...]   overwrite locally modified seeded rules too
+
+if [ "${1:-}" = "update" ]; then
+  shift
+  FORCE=""
+  if [ "${1:-}" = "--force" ]; then FORCE="--force"; shift; fi
+  [ $# -eq 0 ] && set -- .
+  for PROJECT in "$@"; do
+    echo "== $PROJECT =="
+    ai-dev-init "$PROJECT"
+    ai-dev-project-index "$PROJECT"
+    ai-dev-project-rules "$PROJECT" --update $FORCE
+  done
+  exit 0
+fi
+
 PROJECT="${1:-.}"
 
 ai-dev-init "$PROJECT"

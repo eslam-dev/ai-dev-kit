@@ -64,8 +64,11 @@ To remove everything: `./uninstall.sh`. To check that the install is healthy: `.
 | `ai-dev-init .` | Scaffolds the cross-tool adapter files (`CLAUDE.md`, `AGENTS.md`, etc.) — only creates files that don't already exist yet; never overwrites. |
 | `ai-dev-project-index .` | Builds or incrementally updates `.ai/project-index/`. |
 | `ai-dev-project-rules .` | Builds or updates `.cursor/rules/`. |
+| `ai-dev update [projects...]` | Same as `ai-dev .` per project, plus refreshes previously seeded rules to the current kit templates. Copies the project has edited are kept and listed; add `--force` to overwrite them too. Accepts multiple project paths. |
 
 All three (and `ai-dev`) accept an optional project path argument, defaulting to `.`.
+
+Seeding records a hash of every rule it writes in `.cursor/rules/.seed-manifest.json`, so `update` can tell an untouched stale copy (safe to refresh) from one the project customized (kept). Projects seeded before this manifest existed report all differing rules as "kept" on the first `update`; run once with `--force` if those copies were never customized.
 
 ## What happens inside every project
 
