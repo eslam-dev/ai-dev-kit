@@ -4,63 +4,34 @@ alwaysApply: true
 ---
 # New Project Default Stack
 
-Apply this rule when the user asks to create, initialize, scaffold, start, or bootstrap a new Laravel
-application.
+Apply when the user asks to create, initialize, scaffold, start, or bootstrap a new Laravel application.
 
 ## Mandatory Laravel default
-- Use the latest stable Laravel release available at execution time.
-- Verify the current stable release and its PHP / Node.js requirements from official Laravel documentation before installation.
-- Do not hardcode an old Laravel major version in reusable commands or documentation.
-- Use the official Laravel installer or the official Composer project creation flow.
-- Prefer the authentication implementation supplied by the official Laravel starter kit rather than creating custom authentication from scratch.
-- Use the package versions selected by the current official starter kit unless the project has a documented compatibility requirement.
-- Do not split frontend and backend into separate repositories unless the user explicitly requests it or a documented architecture requirement makes it necessary.
+- Use the latest **stable** Laravel release available at execution time; verify the current release and its PHP/Node requirements from official docs before installing. Never hardcode an old major version in reusable commands or docs; never use `dev-master`/beta/RC/nightly when the user asked for "latest".
+- Use the official Laravel installer or official Composer project-creation flow.
+- Prefer the official starter kit's authentication over custom auth from scratch; use the starter kit's package versions unless a documented compatibility requirement says otherwise.
+- Do not split frontend and backend into separate repositories unless explicitly requested or architecturally required and documented.
+- Do not downgrade Laravel because the local machine is outdated — report the missing runtime requirement and the safe upgrade path.
 
-## Frontend stack decision: Blade vs Inertia + React
-Do not default to either. Decide per request, in this order:
-1. The user explicitly names a stack (Blade, Inertia, React, SPA, "server-rendered", etc.) — use it.
-2. The project already exists and has an established stack — follow it.
-3. Genuinely ambiguous on a brand-new project — ask the user which they want before scaffolding, rather than assuming.
+## Frontend stack: Blade vs Inertia + React — never default
+Decide per request, in order:
+1. User explicitly names a stack (Blade, Inertia, React, SPA, "server-rendered", …) — use it.
+2. Existing project with an established stack — follow it.
+3. Genuinely ambiguous on a brand-new project — ask before scaffolding.
 
-Both are equally valid, officially-supported Laravel choices:
-- **Blade**: server-rendered views, official Laravel forms/CSRF/validation-display helpers, Vite for asset
-  compilation, optional Livewire/Alpine when real interactivity is needed. Simpler mental model, no separate
-  frontend build/runtime beyond asset compilation.
-- **Inertia + React + TypeScript**: Laravel's official React starter kit, Inertia.js, React, TypeScript, Vite.
-  SPA-like navigation and richer client interactivity without a separate API layer.
-
-Do not silently switch between the two mid-project without the user requesting it.
+Both are equally valid official choices: **Blade** (server-rendered views, official form/CSRF/validation helpers, Vite assets, optional Livewire/Alpine for real interactivity) and **Inertia + React + TypeScript** (official React starter kit, SPA-like navigation without a separate API layer). Never silently switch between them mid-project. Record the chosen stack in project context so future agents preserve it; an explicit user choice always overrides this rule.
 
 ## Default backend choices
-- Follow current Laravel directory and bootstrap conventions.
-- Use Form Requests for non-trivial validation.
-- Use Policies / Gates for authorization.
-- Use API Resources only for JSON/API boundaries; do not force them into normal Blade view data or Inertia page props without a reason.
-- Keep controllers thin and move multi-step business logic into Services, Actions, or Handlers according to the project rules.
-- Use Enums for constrained business states where appropriate.
-- Prevent N+1 queries from the first implementation.
-- Add database constraints for real business invariants.
-- Use transactions for multi-write critical workflows.
-- Add feature tests for primary flows.
+Current Laravel directory/bootstrap conventions; Form Requests for non-trivial validation; Policies/Gates for authorization; API Resources only at JSON/API boundaries (not forced into Blade view data or Inertia props); thin controllers with multi-step logic in Services/Actions/Handlers; Enums for constrained business states; no N+1 from the first implementation; database constraints for real business invariants; transactions for multi-write critical workflows; feature tests for primary flows.
 
-## Bootstrap decision rules
-Before creating files:
-1. Confirm whether this is genuinely a new project rather than an existing repository.
+## Bootstrap decision order
+1. Confirm this is genuinely a new project, not an existing repository.
 2. Check the current Laravel stable release and platform requirements.
-3. Inspect the environment for PHP, Composer, Node.js, npm/pnpm, required extensions, and database availability.
-4. Decide the frontend stack per the decision rules above.
-5. If Inertia + React was chosen, use the official React starter kit as the baseline; if Blade was chosen, use the standard Laravel application skeleton with Blade views.
-6. If the user supplied business requirements, derive the initial modules and schema before generating broad boilerplate.
-7. Install only dependencies required by the first approved scope.
-8. Initialize Git and create a clean first commit only when the user requested repository setup or it is clearly part of the task.
+3. Inspect the environment: PHP, Composer, Node, npm/pnpm, required extensions, database availability.
+4. Decide the frontend stack per the rules above; scaffold the official React starter kit (Inertia) or the standard skeleton with Blade views accordingly.
+5. If business requirements were supplied, derive initial modules and schema before generating broad boilerplate.
+6. Install only dependencies required by the first approved scope.
+7. Initialize Git and a first commit only when the user requested repository setup or it is clearly part of the task.
 
 ## Prohibited defaults
-- Do not install Laravel Breeze, Jetstream, Fortify, Sanctum, Redux, Zustand, Tailwind plugins, admin panels, permission packages, media libraries, Livewire, Alpine, or debugging packages automatically unless they are part of the chosen official starter kit or the approved requirements.
-- Do not create speculative modules or generic abstractions "for the future".
-- Do not add Docker, Octane, Redis, queues, websockets, search engines, object storage, or CI/CD unless requested or justified by the actual project requirements.
-- Do not use `dev-master`, beta, RC, nightly, or unstable packages when the user asked for the latest Laravel; "latest" means latest stable.
-- Do not downgrade Laravel merely because the local machine is outdated. Report the missing runtime requirement and provide the safe upgrade path.
-- Do not silently switch between Blade and Inertia + React mid-project without the user requesting it.
-
-## User override
-An explicit user choice always overrides this default. Record the chosen frontend stack in project context so future agents preserve it.
+No Breeze, Jetstream, Fortify, Sanctum, Redux, Zustand, Tailwind plugins, admin panels, permission packages, media libraries, Livewire, Alpine, or debugging packages unless part of the chosen official starter kit or approved requirements. No speculative modules or generic abstractions "for the future". No Docker, Octane, Redis, queues, websockets, search engines, object storage, or CI/CD unless requested or justified by actual requirements.
