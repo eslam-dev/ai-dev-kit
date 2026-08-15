@@ -12,7 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 # Root-anchored ignores (path prefixes from the project root).
 IGNORE_PREFIXES = (
@@ -49,6 +49,18 @@ PHP_DECL = re.compile(
     r"|(?P<prefix>(?:(?:public|protected|private|static|final|abstract|readonly)\s+)*)"
     r"function\s+(?P<func>[A-Za-z_][A-Za-z0-9_]*)\s*\()"
 )
+PHP_RETURN_TYPE = re.compile(r"\s*:\s*(?P<type>\??[\w\\|&\s]+?)\s*(?=[{;])")
+PHP_DOC_SUMMARY = re.compile(r"(?m)^\s*\*\s*(?P<line>[^@\s][^\n]*)")
+# Call edges, extracted from string/comment-masked source so literals never
+# masquerade as calls.
+CALL_THIS = re.compile(r"\$this->(?P<name>[A-Za-z_]\w*)\s*\(")
+CALL_STATIC = re.compile(r"(?<![\w$])(?P<class>[A-Z][\w]*)::(?P<name>[A-Za-z_]\w*)\s*\(")
+CALL_NEW = re.compile(r"(?<![\w$])new\s+(?P<class>[A-Z][\w\\]*)\s*\(")
+CALL_VAR = re.compile(r"\$(?!this\b)\w+->(?P<name>[A-Za-z_]\w*)\s*\(")
+CALL_NOISE = {
+    "class", "if", "for", "foreach", "while", "switch", "match", "fn", "function",
+    "array", "isset", "unset", "empty", "list", "echo", "print", "return", "catch",
+}
 PHP_ATTR = re.compile(
     r"(?m)^\s*#\[(?:Livewire\\Attributes\\|Filament\\|Symfony\\[\w\\]*\\)?"
     r"(?P<name>Computed|Locked|On|Lazy|ScopedBy|ObservedBy|AsCommand|Override)\b"
@@ -465,12 +477,18 @@ def domain_of(rel: str, psr4_dirs: list[str]) -> str:
 # Route / hook parsing
 # ---------------------------------------------------------------------------
 
-def statement_body(text: str, start: int, cap: int = 400) -> str:
-    """From an opening position, consume until the first `;` at paren depth 0."""
+def statement_body(text: str, start: int, cap: int = 400, scan: str | None = None) -> str:
+    """From an opening position, consume until the first `;` at paren depth 0.
+
+    `scan` is the string/comment-masked copy used for delimiter tracking, so a
+    `;` or `)` inside a literal never truncates the statement; the returned
+    slice always comes from the real source.
+    """
+    probe = scan if scan is not None else text
     depth = 0
-    end = min(len(text), start + cap)
+    end = min(len(probe), start + cap)
     for i in range(start, end):
-        c = text[i]
+        c = probe[i]
         if c == "(":
             depth += 1
         elif c == ")":
@@ -480,8 +498,9 @@ def statement_body(text: str, start: int, cap: int = 400) -> str:
     return text[start:end]
 
 
-def brace_spans(text: str) -> list[tuple[int, int, dict[str, str]]]:
+def brace_spans(text: str, masked: str | None = None) -> list[tuple[int, int, dict[str, str]]]:
     """Spans of Route::...->group(function() { ... }) blocks with their attrs."""
+    probe = masked if masked is not None else text
     spans = []
     for m in ROUTE_GROUP.finditer(text):
         attrs: dict[str, str] = {}
@@ -493,15 +512,15 @@ def brace_spans(text: str) -> list[tuple[int, int, dict[str, str]]]:
                 attrs["controller"] = cm.group(1).rsplit("\\", 1)[-1]
             elif sm:
                 attrs[am.group("key")] = sm.group(1)
-        brace = text.find("{", m.end())
+        brace = probe.find("{", m.end())
         if brace == -1:
             continue
         depth = 0
         close = -1
-        for i in range(brace, len(text)):
-            if text[i] == "{":
+        for i in range(brace, len(probe)):
+            if probe[i] == "{":
                 depth += 1
-            elif text[i] == "}":
+            elif probe[i] == "}":
                 depth -= 1
                 if depth == 0:
                     close = i
@@ -633,6 +652,162 @@ def parse_schema(text: str) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Declaration extraction — signatures, body ranges, docblock summaries, calls.
+# This is what lets an agent call or edit a symbol without opening the file.
+# ---------------------------------------------------------------------------
+
+def mask_php(text: str) -> str:
+    """Blank out string literals and comments, preserving length and offsets.
+
+    Structural scanning (brace matching, call edges) runs on the masked copy so
+    a brace or `foo(` inside a string or comment can never shift a body range.
+    """
+    out = list(text)
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c in "'\"":
+            quote = c
+            j = i + 1
+            while j < n:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == quote:
+                    break
+                j += 1
+            for k in range(i + 1, min(j, n)):
+                if out[k] != "\n":
+                    out[k] = " "
+            i = j + 1
+            continue
+        if text.startswith("//", i) or c == "#":
+            j = text.find("\n", i)
+            j = n if j == -1 else j
+            for k in range(i, j):
+                out[k] = " "
+            i = j
+            continue
+        if text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j == -1 else j + 2
+            for k in range(i, j):
+                if out[k] != "\n":
+                    out[k] = " "
+            i = j
+            continue
+        if text.startswith("<<<", i):
+            m = re.match(r"<<<\s*['\"]?(\w+)['\"]?\r?\n", text[i:])
+            if m:
+                label = m.group(1)
+                end = re.search(rf"(?m)^\s*{label}\b", text[i + m.end():])
+                j = i + m.end() + (end.start() if end else 0)
+                for k in range(i, min(j, n)):
+                    if out[k] != "\n":
+                        out[k] = " "
+                i = max(j, i + m.end())
+                continue
+        i += 1
+    return "".join(out)
+
+
+def balanced(masked: str, start: int, opener: str = "(", closer: str = ")", cap: int = 4000) -> tuple[str, int]:
+    """From the index just after an opening delimiter, return (inner, index_after_close)."""
+    depth = 1
+    end = min(len(masked), start + cap)
+    i = start
+    while i < end:
+        c = masked[i]
+        if c == opener:
+            depth += 1
+        elif c == closer:
+            depth -= 1
+            if depth == 0:
+                return masked[start:i], i + 1
+        i += 1
+    return masked[start:end], end
+
+
+def php_signature(text: str, masked: str, after_paren: int) -> tuple[str, int]:
+    """Normalized `(params): ret` plus the offset where the body/`;` begins."""
+    _, close = balanced(masked, after_paren)
+    params = " ".join(text[after_paren:close - 1].split())
+    sig = f"({params})"
+    m = PHP_RETURN_TYPE.match(masked, close)
+    if m:
+        sig += ": " + " ".join(text[m.start("type"):m.end("type")].split())
+        close = m.end()
+    return sig[:240], close
+
+
+def body_range(masked: str, body_start: int) -> int | None:
+    """Offset of the declaration's closing brace (None for abstract/interface)."""
+    i = body_start
+    n = len(masked)
+    while i < n and masked[i] in " \t\r\n":
+        i += 1
+    if i >= n or masked[i] == ";":
+        return None
+    if masked[i] != "{":
+        return None
+    depth = 0
+    for j in range(i, n):
+        if masked[j] == "{":
+            depth += 1
+        elif masked[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return j
+    return None
+
+
+def docblock_summary(text: str, decl_start: int) -> str:
+    """First prose line of the PHPDoc immediately above a declaration."""
+    head = text.rfind("*/", max(0, decl_start - 3000), decl_start)
+    if head == -1:
+        return ""
+    between = text[head + 2:decl_start]
+    # Only attributes/whitespace may sit between the docblock and the declaration.
+    if between.strip() and not all(
+        line.strip().startswith("#[") or not line.strip()
+        for line in between.splitlines()
+    ):
+        return ""
+    open_at = text.rfind("/**", 0, head)
+    if open_at == -1:
+        return ""
+    m = PHP_DOC_SUMMARY.search(text[open_at:head])
+    if not m:
+        return ""
+    return " ".join(m.group("line").split())[:140]
+
+
+def call_edges(masked: str, start: int, end: int, self_class: str | None) -> list[str]:
+    """Outgoing call targets inside a body: Class::method, Self::method, method."""
+    body = masked[start:end]
+    edges: list[str] = []
+    for m in CALL_THIS.finditer(body):
+        if m.group("name") not in CALL_NOISE:
+            edges.append(f"{self_class}::{m.group('name')}" if self_class else m.group("name"))
+    for m in CALL_STATIC.finditer(body):
+        if m.group("name") not in CALL_NOISE:
+            cls = m.group("class")
+            edges.append(f"{'self' if cls in {'self', 'static'} and self_class is None else cls}::{m.group('name')}")
+    for m in CALL_NEW.finditer(body):
+        edges.append(f"{m.group('class').rsplit(chr(92), 1)[-1]}::__construct")
+    for m in CALL_VAR.finditer(body):
+        if m.group("name") not in CALL_NOISE:
+            edges.append(m.group("name"))
+    seen, unique = set(), []
+    for edge in edges:
+        if edge not in seen:
+            seen.add(edge)
+            unique.append(edge)
+    return unique[:40]
+
+
+# ---------------------------------------------------------------------------
 # Per-file parsing
 # ---------------------------------------------------------------------------
 
@@ -661,12 +836,14 @@ def parse(path: Path, rel: str, is_wp: bool, psr4_dirs: list[str]) -> dict[str, 
         return text.count("\n", 0, pos) + 1
 
     if path.suffix.lower() == ".php" or rel.startswith("routes/"):
+        masked = mask_php(text)
         m = PHP_NAMESPACE.search(text)
         namespace = m.group(1).strip() if m else None
 
         first_type_pos = None
         current_class = None
         pending_attrs: list[str] = []
+        file_calls: list[str] = []
         # Interleave attribute lines and declarations by position.
         events = sorted(
             [(m.start(), "attr", m) for m in PHP_ATTR.finditer(text)]
@@ -693,8 +870,20 @@ def parse(path: Path, rel: str, is_wp: bool, psr4_dirs: list[str]) -> dict[str, 
                 if current_class:
                     sym["class"] = current_class
                 vis = re.search(r"\b(public|protected|private)\b", m.group("prefix") or "")
-                if vis:
-                    sym["visibility"] = vis.group(1)
+                sym["visibility"] = vis.group(1) if vis else "public"
+                # Declaration data an agent needs to call or edit this symbol
+                # without opening the file: full signature, body range, summary.
+                signature, body_start = php_signature(text, masked, m.end())
+                sym["sig"] = signature
+                close = body_range(masked, body_start)
+                if close is not None:
+                    sym["end"] = line_of(close)
+                    file_calls.extend(call_edges(masked, body_start, close, current_class))
+                else:
+                    sym["abstract"] = True
+                doc = docblock_summary(text, pos)
+                if doc:
+                    sym["doc"] = doc
                 if pending_attrs:
                     sym["attrs"] = pending_attrs
             else:
@@ -702,6 +891,14 @@ def parse(path: Path, rel: str, is_wp: bool, psr4_dirs: list[str]) -> dict[str, 
                 if first_type_pos is None:
                     first_type_pos = pos
                 sym = {"kind": m.group("kind"), "name": m.group("type"), "line": line_of(pos)}
+                brace = masked.find("{", m.end())
+                if brace != -1:
+                    close = body_range(masked, brace)
+                    if close is not None:
+                        sym["end"] = line_of(close)
+                doc = docblock_summary(text, pos)
+                if doc:
+                    sym["doc"] = doc
                 if pending_attrs:
                     sym["attrs"] = pending_attrs
             pending_attrs = []
@@ -718,13 +915,13 @@ def parse(path: Path, rel: str, is_wp: bool, psr4_dirs: list[str]) -> dict[str, 
         if trait_uses:
             extras["traits"] = trait_uses[:20]
 
-        groups = brace_spans(text)
+        groups = brace_spans(text, masked)
         for rm in ROUTE_START.finditer(text):
-            body = statement_body(text, rm.end())
+            body = statement_body(text, rm.end(), scan=masked)
             active = [attrs for start, end, attrs in groups if start < rm.start() < end]
             routes.append(parse_route(rm.group("verb"), body, active))
         for hm in HOOK_START.finditer(text):
-            body = statement_body(text, hm.end())
+            body = statement_body(text, hm.end(), scan=masked)
             routes.append(parse_hook(hm.group("verb"), body))
 
         for m in RELATION.finditer(text):
@@ -801,6 +998,14 @@ def parse(path: Path, rel: str, is_wp: bool, psr4_dirs: list[str]) -> dict[str, 
             schema = parse_schema(text)
             if schema:
                 extras["schema"] = schema
+
+        if file_calls:
+            seen, unique = set(), []
+            for edge in file_calls:
+                if edge not in seen:
+                    seen.add(edge)
+                    unique.append(edge)
+            extras["calls"] = unique[:80]
 
     elif path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx", ".vue"}:
         for m in JS_DECL.finditer(text):

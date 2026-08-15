@@ -8,7 +8,7 @@ BACKUP="$CURSOR_HOME/ai-dev-kit-backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$CURSOR_HOME/agents" "$CURSOR_HOME/skills"
 
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share/ai-dev-kit/bin"
-for cmd in ai-dev ai-dev-init ai-dev-project-index ai-dev-project-rules ai-dev-query; do
+for cmd in ai-dev ai-dev-init ai-dev-project-index ai-dev-project-rules ai-dev-query ai-dev-mcp; do
   cp "$ROOT/bin/$cmd" "$HOME/.local/share/ai-dev-kit/bin/$cmd"
   chmod +x "$HOME/.local/share/ai-dev-kit/bin/$cmd"
   ln -sfn "$HOME/.local/share/ai-dev-kit/bin/$cmd" "$HOME/.local/bin/$cmd"
@@ -82,7 +82,7 @@ printf 'Every project gets its rules, agents, and index automatically on first t
 printf '\nInstalled:\n'
 printf '  Agents: %s/agents/ai-dev-*\n' "$CURSOR_HOME"
 printf '  Skills: %s/skills/ai-dev-*\n' "$CURSOR_HOME"
-printf '  Commands: ai-dev, ai-dev-init, ai-dev-project-index, ai-dev-project-rules, ai-dev-query\n'
+printf "  Commands: ai-dev, ai-dev-init, ai-dev-project-index, ai-dev-project-rules, ai-dev-query, ai-dev-mcp\n"
 
 printf '\nIf you use Cursor: restart it to pick up the new agents/skills.\n'
 

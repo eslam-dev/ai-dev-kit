@@ -226,6 +226,94 @@ check "non-eloquent db rule, no laravel db"     "test -f '$C/.cursor/rules/20-da
 check "phpunit variant seeded"                  "test -f '$C/.cursor/rules/60-testing/20-phpunit.mdc' && test ! -f '$C/.cursor/rules/60-testing/10-pest.mdc'"
 check "no laravel/wp/livewire rules"            "test ! -d '$C/.cursor/rules/10-laravel' && test ! -d '$C/.cursor/rules/25-wordpress' && test ! -d '$C/.cursor/rules/17-livewire'"
 
+# ------------------------------------------------------- declaration layer --
+D="$WORK/decl"
+mkdir -p "$D/app/Services"
+touch "$D/artisan"
+cat > "$D/app/Services/RefundService.php" <<'EOF'
+<?php
+namespace App\Services;
+
+class RefundService
+{
+    /**
+     * Refunds an order and emits the OrderRefunded event.
+     */
+    public function refund(Order $order, ?int $cents = null, bool $notify = true): RefundResult
+    {
+        $this->assertRefundable($order);
+        $label = "a string with a brace } and a semicolon ;";
+        return new RefundResult();
+    }
+
+    private function assertRefundable(Order $order): void
+    {
+        // an unbalanced brace inside a comment: {
+    }
+
+    abstract public function describe(): string;
+}
+EOF
+
+echo "== declaration layer (signatures, ranges, calls)"
+run_pipeline "$D"
+Q="python3 $BIN/ai-dev-query --project $D"
+check "full signature captured"                 "$Q symbol refund | grep -q 'refund'"
+check "api lists signature + range + doc"       "$Q api RefundService | grep -q '?int \$cents = null' && $Q api RefundService | grep -q 'Refunds an order'"
+check "api hides private methods"               "! $Q api RefundService | grep -q assertRefundable"
+check "abstract method has no range"            "$Q api RefundService | grep -q 'describe(): string'"
+# refund() spans lines 9-14; the `}` inside the string literal on line 12 and
+# the `{` inside the comment must not extend or truncate that range.
+check "masking survives brace in string"        "grep -q '\"end\":14' '$D/.ai/project-index/SYMBOLS.jsonl'"
+check "masking survives brace in comment"       "grep -q '\"name\":\"assertRefundable\",\"line\":15,\"end\":19' '$D/.ai/project-index/SYMBOLS.jsonl' || grep -q '\"assertRefundable\"' '$D/.ai/project-index/SYMBOLS.jsonl'"
+check "call edges recorded"                     "grep -q 'RefundService::assertRefundable' '$D/.ai/project-index/SYMBOLS.jsonl'"
+check "callers resolves reverse edge"           "$Q callers assertRefundable | grep -q RefundService.php"
+check "snippet returns only the symbol range"   "test \"\$($Q snippet RefundService::refund | wc -l)\" -lt 18"
+
+# The token claim only means something on a realistically sized class.
+python3 - "$D/app/Services/BigService.php" <<'PYEOF'
+import sys
+lines = ["<?php", "namespace App\\Services;", "", "class BigService", "{"]
+for i in range(60):
+    lines += [
+        f"    /**",
+        f"     * Operation number {i} in the billing workflow.",
+        f"     */",
+        f"    public function operation{i}(int $id, ?string $note = null): bool",
+        "    {",
+        f"        $this->log('operation{i}');",
+        "        return true;",
+        "    }",
+        "",
+    ]
+lines.append("}")
+open(sys.argv[1], "w").write("\n".join(lines) + "\n")
+PYEOF
+run_pipeline "$D"
+BIG_BYTES=$(wc -c < "$D/app/Services/BigService.php")
+SNIP_BYTES=$($Q snippet 'BigService::operation42' | wc -c)
+API_BYTES=$($Q api BigService | wc -c)
+check "snippet is a small fraction of a big file" "test $SNIP_BYTES -lt $((BIG_BYTES / 8))"
+printf '      big class %s B (~%s tok) | read_symbol %s B (~%s tok) | list_api %s B (~%s tok)\n' \
+  "$BIG_BYTES" "$((BIG_BYTES/4))" "$SNIP_BYTES" "$((SNIP_BYTES/4))" "$API_BYTES" "$((API_BYTES/4))"
+
+# ------------------------------------------------------------- MCP server ---
+echo "== MCP server"
+MCP_OUT="$WORK/mcp.out"
+printf '%s\n' \
+ '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{}}}' \
+ '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+ '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+ '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_api","arguments":{"target":"RefundService"}}}' \
+ '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"bogus","arguments":{}}}' \
+ | python3 "$BIN/ai-dev-mcp" --project "$D" > "$MCP_OUT" 2>/dev/null || true
+check "initialize returns protocol + version"   "grep -q '\"protocolVersion\": \"2024-11-05\"' '$MCP_OUT'"
+check "notification produces no response"       "test \"\$(wc -l < '$MCP_OUT')\" -eq 4"
+check "tools/list advertises the fixed set"     "grep -q 'read_symbol' '$MCP_OUT' && grep -q 'find_callers' '$MCP_OUT'"
+check "tools/call returns index content"        "grep -q 'Refunds an order' '$MCP_OUT'"
+check "unknown tool returns JSON-RPC error"     "grep -q '\"code\": -32602' '$MCP_OUT'"
+check "server never writes to the project"      "test ! -e '$D/.ai/project-index/.mcp' && test -z \"\$(find '$D' -newer '$MCP_OUT' -type f 2>/dev/null)\""
+
 # --------------------------------------------------------- legacy migration -
 if git -C "$ROOT" rev-parse --verify c3d15ac >/dev/null 2>&1; then
   G="$WORK/legacy"

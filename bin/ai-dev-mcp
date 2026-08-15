@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""ai-dev-mcp — MCP stdio server exposing the project index as native tools.
+
+Why this exists: a coding agent that has to spawn `ai-dev query ...` through a
+shell pays shell + interpreter + index-load on every lookup, and many hosts
+show shell calls as heavyweight steps. As an MCP server the same lookups become
+first-class tools the host calls directly, and the parsed index stays warm in
+memory between calls (re-read only when SYMBOLS.jsonl changes on disk).
+
+Deliberately a SMALL, FIXED tool set. The project's own functions are data
+returned BY these tools — never one tool per project symbol, which would put
+thousands of declarations into every request and destroy both the token budget
+and tool-selection accuracy.
+
+Register with Claude Code:
+    claude mcp add ai-dev -- ai-dev-mcp --project /path/to/project
+Cursor (.cursor/mcp.json):
+    {"mcpServers": {"ai-dev": {"command": "ai-dev-mcp", "args": ["--project", "."]}}}
+
+Protocol: JSON-RPC 2.0 over stdio (MCP 2024-11-05). Read-only: it never writes
+to the project and never rebuilds the index — it reports staleness instead.
+"""
+from __future__ import annotations
+
+import argparse
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
+import json
+import sys
+from pathlib import Path
+
+PROTOCOL_VERSION = "2024-11-05"
+SERVER_NAME = "ai-dev"
+
+
+def load_query_module():
+    """Load the sibling ai-dev-query script as a module (it has no .py suffix)."""
+    path = Path(__file__).resolve().parent / "ai-dev-query"
+    spec = importlib.util.spec_from_loader(
+        "ai_dev_query", importlib.machinery.SourceFileLoader("ai_dev_query", str(path))
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+Q = load_query_module()
+
+# name -> (description, {arg: (type, description)}, required args, handler key)
+TOOLS = {
+    "project_map": (
+        "Stack, detected frameworks, quality-gate tooling, and domain list for the project. "
+        "Cheapest possible orientation — call this before exploring anything.",
+        {}, [], "map",
+    ),
+    "find_symbol": (
+        "Locate a class, method, function, or property by name (or Class::method). Returns "
+        "path:line, kind, visibility, owning class, and PHP attributes. Use instead of grepping.",
+        {"name": ("string", "Symbol name, e.g. 'OrderController' or 'OrderTable::refund'")},
+        ["name"], "symbol",
+    ),
+    "list_api": (
+        "Public callable surface of a class, domain, or path: every public method with its full "
+        "signature, line range, and docblock summary — no bodies. Use this to learn how to CALL "
+        "code without reading it.",
+        {"target": ("string", "Class name, domain name, or path fragment")},
+        ["target"], "api",
+    ),
+    "read_symbol": (
+        "Source of ONE symbol only — the exact line range it occupies, with line numbers. "
+        "Use instead of reading a whole file when you need a single method's body.",
+        {"name": ("string", "Symbol name or Class::method")},
+        ["name"], "snippet",
+    ),
+    "find_callers": (
+        "Every indexed file that calls a symbol — edit-impact analysis without searching. "
+        "Note: dynamic/unresolved calls are not tracked.",
+        {"name": ("string", "Symbol name or Class::method")},
+        ["name"], "callers",
+    ),
+    "find_route": (
+        "HTTP routes matching a substring: method, URI, route name, handler, defining file. "
+        "Also covers Livewire components and Filament resources as entry points.",
+        {"term": ("string", "URI, route name, or handler fragment")},
+        ["term"], "route",
+    ),
+    "find_hook": (
+        "WordPress hooks, filters, shortcodes, REST routes, custom post types, and lifecycle "
+        "hooks. REST routes lacking permission_callback are flagged in the output.",
+        {"term": ("string", "Hook name, REST namespace, or handler fragment")},
+        ["term"], "hook",
+    ),
+    "describe_file": (
+        "One file's brief: symbols with line numbers and signatures, routes, relations, tables, "
+        "and its tests. Cheaper than reading the file.",
+        {"path": ("string", "File path, full or partial")},
+        ["path"], "file",
+    ),
+    "describe_domain": (
+        "A domain's brief: key files ranked by responsibility, entry points, tables, and tests.",
+        {"name": ("string", "Domain name as listed by project_map")},
+        ["name"], "domain",
+    ),
+    "describe_table": (
+        "Database table columns folded from migrations, plus every file touching the table.",
+        {"name": ("string", "Table name")},
+        ["name"], "table",
+    ),
+    "changed_files": (
+        "Files added, modified, or removed since the previous index run — the cheap way to "
+        "orient on a follow-up task.",
+        {}, [], "changed",
+    ),
+}
+
+
+class Index:
+    """Parsed index cached in memory, invalidated by SYMBOLS.jsonl mtime."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        self._records = None
+        self._stamp = None
+
+    def _mtime(self):
+        path = self.root / ".ai/project-index/SYMBOLS.jsonl"
+        try:
+            return path.stat().st_mtime_ns
+        except OSError:
+            return None
+
+    def records(self):
+        stamp = self._mtime()
+        if stamp is None:
+            raise RuntimeError(
+                "No project index found. Run `ai-dev .` in the project first."
+            )
+        if self._records is None or stamp != self._stamp:
+            self._records = Q.load_records(self.root)
+            self._stamp = stamp
+        return self._records
+
+
+def run_command(index: Index, key: str, args: dict) -> str:
+    """Invoke a query command, capturing its stdout (the MCP channel is stdout)."""
+    limit = int(args.get("limit", 30))
+    buffer = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buffer):
+            if key == "changed":
+                Q.cmd_changed(index.root, False)
+            elif key == "map":
+                Q.cmd_map(index.records(), index.root, False)
+            else:
+                term = str(next((v for k, v in args.items() if k != "limit"), ""))
+                records = index.records()
+                if key == "symbol":
+                    Q.cmd_symbol(records, term, limit, False)
+                elif key == "api":
+                    Q.cmd_api(records, term, limit, False)
+                elif key == "snippet":
+                    Q.cmd_snippet(records, term, limit, False, index.root)
+                elif key == "callers":
+                    Q.cmd_callers(records, term, limit, False)
+                elif key == "route":
+                    Q.cmd_routes(records, term, limit, False, wp=False)
+                elif key == "hook":
+                    Q.cmd_routes(records, term, limit, False, wp=True)
+                elif key == "file":
+                    Q.cmd_file(records, term, limit, False)
+                elif key == "domain":
+                    Q.cmd_domain(records, term, limit, False)
+                elif key == "table":
+                    Q.cmd_table(records, term, limit, False)
+                else:
+                    return f"unknown command: {key}"
+    except SystemExit:
+        # Query commands report "not found" / stale-index by exiting; the text
+        # they printed is the useful answer for the model.
+        pass
+    except RuntimeError as exc:
+        return str(exc)
+    except Exception as exc:  # never kill the server on one bad lookup
+        return f"lookup failed: {type(exc).__name__}: {exc}"
+    return buffer.getvalue().strip() or "no results"
+
+
+def tool_schema(name: str) -> dict:
+    description, params, required, _ = TOOLS[name]
+    properties = {
+        arg: {"type": kind, "description": desc} for arg, (kind, desc) in params.items()
+    }
+    properties["limit"] = {"type": "integer", "description": "Max results (default 30)"}
+    return {
+        "name": name,
+        "description": description,
+        "inputSchema": {"type": "object", "properties": properties, "required": required},
+    }
+
+
+def handle(request: dict, index: Index) -> dict | None:
+    method = request.get("method")
+    request_id = request.get("id")
+
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0", "id": request_id,
+            "result": {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": SERVER_NAME, "version": Q.supported_version()},
+                "instructions": (
+                    "Project index tools for this codebase. Orient with project_map, locate code "
+                    "with find_symbol/find_route, learn how to call it with list_api, and read only "
+                    "the lines you need with read_symbol. Never treat index data as authoritative "
+                    "for security, payments, authorization, or migrations — verify those in source."
+                ),
+            },
+        }
+    if method in ("notifications/initialized", "initialized"):
+        return None
+    if method == "ping":
+        return {"jsonrpc": "2.0", "id": request_id, "result": {}}
+    if method == "tools/list":
+        return {
+            "jsonrpc": "2.0", "id": request_id,
+            "result": {"tools": [tool_schema(name) for name in TOOLS]},
+        }
+    if method == "tools/call":
+        params = request.get("params") or {}
+        name = params.get("name")
+        if name not in TOOLS:
+            return {
+                "jsonrpc": "2.0", "id": request_id,
+                "error": {"code": -32602, "message": f"unknown tool: {name}"},
+            }
+        text = run_command(index, TOOLS[name][3], params.get("arguments") or {})
+        return {
+            "jsonrpc": "2.0", "id": request_id,
+            "result": {"content": [{"type": "text", "text": text}], "isError": False},
+        }
+    if request_id is None:
+        return None
+    return {
+        "jsonrpc": "2.0", "id": request_id,
+        "error": {"code": -32601, "message": f"method not found: {method}"},
+    }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--project", default=".", help="project root (default: cwd)")
+    args = ap.parse_args()
+    index = Index(Path(args.project).resolve())
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            request = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        try:
+            response = handle(request, index)
+        except Exception as exc:
+            response = {
+                "jsonrpc": "2.0", "id": request.get("id"),
+                "error": {"code": -32603, "message": f"internal error: {exc}"},
+            }
+        if response is not None:
+            sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()

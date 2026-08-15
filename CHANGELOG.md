@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.0
+
+**The declaration layer** — agents now learn how to call project code, and where to edit it, without opening files. Index format `1.5.0` (rebuilds automatically).
+
+- **Full signatures in the index.** Every PHP method/function record now carries `sig` (`(Order $order, ?int $cents = null, bool $notify = true): RefundResult`), `end` (closing line, so a symbol is an exact range not just a start), `doc` (first line of its PHPDoc), and `visibility`. Classes carry ranges and summaries too.
+- **String/comment masking.** Structural scanning (body ranges, call edges, route/hook statements) now runs on a copy with string literals, `//`/`#`/`/* */` comments, and heredocs blanked out at identical offsets. A `}` inside a string or a `;` inside a comment can no longer corrupt a symbol range or truncate a route definition — most of the value of a real AST parser, without requiring PHP to be installed.
+- **Call graph.** Per-file `calls` edges (`$this->m()`, `Class::m()`, `new Class()`, `$var->m()`), powering reverse lookup.
+- **Three new `ai-dev query` subcommands:**
+  - `api <Class|domain|path>` — the callable surface: every public method with signature, line range, and summary, no bodies.
+  - `snippet <Class::method>` — only the lines that symbol occupies, with line numbers. On a 60-method class this is **~104 tokens instead of ~3,095 for the whole file (97% less)**.
+  - `callers <Class::method>` — every indexed file that calls it, for edit-impact before changing a signature.
+- **`ai-dev-mcp` (new command): an MCP stdio server** exposing the index as 11 native tools (`project_map`, `find_symbol`, `list_api`, `read_symbol`, `find_callers`, `find_route`, `find_hook`, `describe_file`, `describe_domain`, `describe_table`, `changed_files`). Register once and Claude Code / Cursor call lookups directly instead of shelling out; the parsed index stays warm in memory between calls and is re-read only when `SYMBOLS.jsonl` changes. Read-only — it never writes to the project and never rebuilds the index, it reports staleness.
+  ```bash
+  claude mcp add ai-dev -- ai-dev-mcp --project .
+  ```
+  Deliberately a small fixed tool set: project symbols are *data returned by* these tools, never one tool declaration per symbol (which would push thousands of declarations into every request).
+- Adapter and navigation rule text updated so agents actually reach for `api`/`snippet`/`callers` instead of reading files; `ai-dev-query` now reads its supported index version from the sibling indexer so the two can never drift on a format bump.
+
 ## 1.4.0
 
 **Auto-update.** The kit now has a version (`VERSION`, installed to `~/.local/share/ai-dev-kit/VERSION`) and every project records the kit version that last synced it in `.ai/kit-version` (commit it). Plain `ai-dev .` detects a newer installed kit and automatically refreshes all kit-managed files — no more manual `ai-dev update` after upgrading. Locally modified rules are never overwritten automatically (listed as `kept:`); a stamp newer than the installed kit never downgrades.

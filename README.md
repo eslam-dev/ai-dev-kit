@@ -121,19 +121,50 @@ Full rebuild: `ai-dev-project-index . --full`.
 One cheap command instead of a read chain:
 
 ```bash
+ai-dev query map                        # stack + tooling + domains, ultra-compact
+ai-dev query changed                    # files changed since the last index run
 ai-dev query symbol UserController      # path:line, kind, visibility, owning class, attributes
-ai-dev query symbol "OrderTable::refund"
+ai-dev query api RefundService          # every public signature + line range + summary — no bodies
+ai-dev query snippet RefundService::refund   # only the lines that symbol occupies
+ai-dev query callers OrderService::refund    # every file that calls it (edit impact)
 ai-dev query route orders               # matching routes with names and handlers
 ai-dev query hook rest                  # WordPress hooks/CPTs/REST routes
 ai-dev query file app/Models/Order.php  # one file's full brief (symbols, relations, tests)
 ai-dev query domain Billing             # key files, routes, tables, tests of one domain
 ai-dev query table orders               # columns (from migrations) + files touching the table
 ai-dev query env STRIPE_KEY             # files using an env/config key
-ai-dev query changed                    # files changed since the last index run
-ai-dev query map                        # stack + domains, ultra-compact
 ```
 
 All subcommands accept `--json`, `--limit N`, `--project PATH`. Query never writes anything.
+
+### The declaration layer
+
+The index stores a full signature, an exact line range, and the docblock summary for every symbol, so an agent can learn **how to call** code and **where to edit** it without opening a file:
+
+```text
+RefundService::refund(Order $order, ?int $cents = null, bool $notify = true): RefundResult
+  [app/Services/RefundService.php:13-20] — Refunds an order and emits the OrderRefunded event.
+```
+
+Measured on a 60-method class: reading the file costs ~3,095 tokens; `ai-dev query snippet` costs ~104 (**97% less**), and `ai-dev query api` describes the entire class for ~767.
+
+Structural scanning runs on a string/comment-masked copy of the source, so a `}` inside a string or a `;` inside a comment cannot corrupt a range — most of an AST parser's reliability without requiring PHP to be installed.
+
+## MCP server
+
+Register the index once and lookups become native tool calls in your editor instead of shell commands, with the parsed index kept warm between calls:
+
+```bash
+claude mcp add ai-dev -- ai-dev-mcp --project .
+```
+
+Cursor — `.cursor/mcp.json`:
+
+```json
+{"mcpServers": {"ai-dev": {"command": "ai-dev-mcp", "args": ["--project", "."]}}}
+```
+
+It exposes 11 read-only tools: `project_map`, `find_symbol`, `list_api`, `read_symbol`, `find_callers`, `find_route`, `find_hook`, `describe_file`, `describe_domain`, `describe_table`, `changed_files`. The tool set is deliberately small and fixed — your project's symbols are *data returned by* these tools, never one tool declaration per symbol, which would push thousands of declarations into every request and wreck both the token budget and tool-selection accuracy. The server never writes to the project and never rebuilds the index; it reports staleness and tells you to run `ai-dev .`.
 
 ## Mandatory agent behavior
 

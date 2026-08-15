@@ -3,6 +3,9 @@
 
 Answers in a few lines what would otherwise cost a tiered read chain:
   ai-dev-query symbol UserController        # where is it? (path:line, owner)
+  ai-dev-query api RefundService            # callable surface: signatures + ranges, no bodies
+  ai-dev-query snippet RefundService::refund # only the lines that symbol occupies
+  ai-dev-query callers OrderService::refund  # every file that calls it (edit-impact)
   ai-dev-query route orders                 # routes matching a substring
   ai-dev-query hook rest                    # WordPress hooks/CPTs/REST routes
   ai-dev-query file app/Models/Order.php    # one file's full brief
@@ -19,10 +22,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
-SUPPORTED_VERSION = "1.4.0"
+def supported_version() -> str:
+    """The index format this build understands — read from the sibling indexer
+    so the two can never drift out of sync on a format bump."""
+    indexer = Path(__file__).resolve().parent / "ai-dev-project-index"
+    try:
+        for line in indexer.read_text(encoding="utf-8").splitlines()[:40]:
+            m = re.match(r'^VERSION\s*=\s*"([^"]+)"', line)
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return "1.5.0"
+
+
+SUPPORTED_VERSION = None  # resolved lazily in load_records()
 WP_ROW_KINDS = {
     "add_action", "add_filter", "do_action", "apply_filters", "add_shortcode",
     "REST", "CPT", "TAXONOMY", "BLOCK", "ACTIVATION", "DEACTIVATION", "UNINSTALL",
@@ -56,8 +74,9 @@ def load_records(root: Path) -> list[dict]:
             records.append(rec)
     except Exception:
         fail("index unreadable — run `ai-dev .` to rebuild it")
-    if not header or header.get("version") != SUPPORTED_VERSION:
-        fail(f"index format {header.get('version') if header else 'unknown'} != {SUPPORTED_VERSION} — run `ai-dev .` to rebuild it")
+    expected = supported_version()
+    if not header or header.get("version") != expected:
+        fail(f"index format {header.get('version') if header else 'unknown'} != {expected} — run `ai-dev .` to rebuild it")
     return records
 
 
@@ -213,6 +232,120 @@ def cmd_env(records, term, limit, as_json):
         print(f"{path}: {', '.join(keys)}")
 
 
+def find_symbol(records, term):
+    """Resolve `name` / `Class::name` / `Class` to (record, symbol)."""
+    cls, _, name = term.rpartition("::")
+    for rec in records:
+        for sym in rec.get("symbols", []):
+            if sym.get("name") != name:
+                continue
+            if cls and sym.get("class") != cls and sym.get("name") != cls:
+                continue
+            return rec, sym
+    low = term.lower()
+    for rec in records:
+        for sym in rec.get("symbols", []):
+            if low in sym.get("name", "").lower():
+                return rec, sym
+    return None, None
+
+
+def cmd_api(records, term, limit, as_json):
+    """Callable surface of a class or domain — signatures, no bodies."""
+    low = term.lower()
+    members = [r for r in records if r.get("domain", "").lower() == low]
+    scope = f"domain {term}"
+    if not members:
+        members = [
+            r for r in records
+            if any(s.get("name", "").lower() == low and s["kind"] in {"class", "interface", "trait", "enum"}
+                   for s in r.get("symbols", []))
+        ]
+        scope = f"class {term}"
+    if not members:
+        members = [r for r in records if low in r["path"].lower()]
+        scope = f"path ~{term}"
+    if not members:
+        fail(f"no class, domain, or file matching '{term}'")
+
+    entries = []
+    for rec in sorted(members, key=lambda r: r["path"]):
+        for sym in rec.get("symbols", []):
+            if sym["kind"] != "function" or sym.get("visibility", "public") != "public":
+                continue
+            owner = sym.get("class") or Path(rec["path"]).stem
+            entries.append({
+                "fq": f"{owner}::{sym['name']}",
+                "sig": sym.get("sig", "()"),
+                "loc": f"{rec['path']}:{sym['line']}" + (f"-{sym['end']}" if sym.get("end") else ""),
+                "doc": sym.get("doc", ""),
+            })
+    if as_json:
+        print(json.dumps(entries[:limit], ensure_ascii=False))
+        return
+    if not entries:
+        fail(f"{scope}: no public methods indexed")
+    print(f"{scope} — public API ({len(entries)} methods)")
+    for e in entries[:limit]:
+        doc = f"  — {e['doc']}" if e["doc"] else ""
+        print(f"  {e['fq']}{e['sig']}  [{e['loc']}]{doc}")
+    if len(entries) > limit:
+        print(f"... {len(entries) - limit} more (raise --limit)")
+
+
+def cmd_callers(records, term, limit, as_json):
+    """Reverse call graph — every file whose body calls this symbol."""
+    cls, _, name = term.rpartition("::")
+    hits = []
+    for rec in records:
+        for edge in rec.get("calls", []):
+            e_cls, _, e_name = edge.rpartition("::")
+            if e_name != name:
+                continue
+            if cls and e_cls and e_cls != cls:
+                continue
+            hits.append({"path": rec["path"], "edge": edge, "domain": rec.get("domain", "")})
+            break
+    if as_json:
+        print(json.dumps(hits[:limit], ensure_ascii=False))
+        return
+    if not hits:
+        fail(f"no indexed caller of '{term}' (unresolved dynamic calls are not tracked)")
+    print(f"callers of {term} — {len(hits)} file(s)")
+    for h in hits[:limit]:
+        print(f"  {h['path']}  ({h['domain']}, via {h['edge']})")
+    if len(hits) > limit:
+        print(f"... {len(hits) - limit} more (raise --limit)")
+
+
+def cmd_snippet(records, term, limit, as_json, root: Path, pad: int = 3):
+    """Print only the lines a symbol occupies — never the whole file."""
+    rec, sym = find_symbol(records, term)
+    if not rec:
+        fail(f"no symbol matching '{term}'")
+    start = max(1, sym["line"] - pad)
+    end = sym.get("end", sym["line"]) + pad
+    path = root / rec["path"]
+    if not path.exists():
+        fail(f"{rec['path']} is indexed but missing on disk — run `ai-dev .`")
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    end = min(end, len(lines))
+    body = lines[start - 1:end]
+    if as_json:
+        print(json.dumps({
+            "path": rec["path"], "start": start, "end": end,
+            "sig": sym.get("sig", ""), "code": "\n".join(body),
+        }, ensure_ascii=False))
+        return
+    header = f"{rec['path']}:{start}-{end}"
+    if sym.get("sig"):
+        header += f"  {sym.get('class', '')}{'::' if sym.get('class') else ''}{sym['name']}{sym['sig']}"
+    print(header)
+    width = len(str(end))
+    for i, line in enumerate(body, start):
+        print(f"{str(i).rjust(width)}| {line}")
+
+
 def cmd_changed(root, as_json):
     path = root / ".ai/project-index/last-run.json"
     if not path.exists():
@@ -259,7 +392,10 @@ def cmd_map(records, root, as_json):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["symbol", "route", "hook", "file", "domain", "table", "env", "changed", "map"])
+    ap.add_argument("command", choices=[
+        "symbol", "api", "snippet", "callers", "route", "hook", "file",
+        "domain", "table", "env", "changed", "map",
+    ])
     ap.add_argument("term", nargs="?", default="")
     ap.add_argument("--project", default=".")
     ap.add_argument("--limit", type=int, default=20)
@@ -279,6 +415,9 @@ def main() -> None:
         fail(f"usage: ai-dev-query {args.command} <term>")
     dispatch = {
         "symbol": cmd_symbol,
+        "api": cmd_api,
+        "callers": cmd_callers,
+        "snippet": lambda r, t, l, j: cmd_snippet(r, t, l, j, root),
         "route": lambda r, t, l, j: cmd_routes(r, t, l, j, wp=False),
         "hook": lambda r, t, l, j: cmd_routes(r, t, l, j, wp=True),
         "file": cmd_file,

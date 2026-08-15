@@ -29,7 +29,7 @@ for kind in agents skills; do
 done
 
 printf '\nCommands:\n'
-for cmd in ai-dev ai-dev-init ai-dev-project-index ai-dev-project-rules ai-dev-query; do
+for cmd in ai-dev ai-dev-init ai-dev-project-index ai-dev-project-rules ai-dev-query ai-dev-mcp; do
   if command -v "$cmd" >/dev/null 2>&1; then
     printf '  OK: %s -> %s\n' "$cmd" "$(command -v "$cmd")"
   else
