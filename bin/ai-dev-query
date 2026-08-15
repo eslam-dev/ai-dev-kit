@@ -51,9 +51,55 @@ KEY_FILE_PRIORITY = [
 ]
 
 
+BUDGET = 500  # hard per-answer token ceiling; set from --budget in main()
+TOKEN_BYTES = 4  # cheap, stable bytes-per-token estimate
+
+
 def fail(msg: str) -> None:
     print(msg)
     sys.exit(1)
+
+
+def emit(header: str, rows: list[str], hint: str = "", compact: list[str] | None = None) -> None:
+    """Print at most BUDGET tokens, degrading gracefully and saying what was cut.
+
+    Ladder: full rows -> compact rows (when the caller supplies them) -> as many
+    rows as fit, plus a footer naming how many were omitted. Never silently
+    truncates: a trimmed answer that looks complete is worse than a short one.
+    """
+    limit = BUDGET * TOKEN_BYTES
+    head = (header + "\n") if header else ""
+
+    def size(rs: list[str]) -> int:
+        return len(head) + sum(len(r) + 1 for r in rs)
+
+    chosen, tag = rows, ""
+    if size(rows) > limit and compact:
+        chosen, tag = compact, "  [compact: signatures only]"
+
+    if size(chosen) <= limit:
+        if header:
+            print(header + tag)
+        for row in chosen:
+            print(row)
+        return
+
+    kept: list[str] = []
+    used = len(head) + 120  # reserve room for the footer
+    for row in chosen:
+        if used + len(row) + 1 > limit:
+            break
+        kept.append(row)
+        used += len(row) + 1
+    if not kept and chosen:
+        kept = [chosen[0]]
+    if header:
+        print(header + tag)
+    for row in kept:
+        print(row)
+    omitted = len(chosen) - len(kept)
+    note = f"… {omitted} of {len(chosen)} results omitted to stay under {BUDGET} tokens"
+    print(f"{note} — {hint}" if hint else note)
 
 
 def load_records(root: Path) -> list[dict]:
@@ -103,10 +149,8 @@ def cmd_symbol(records, term, limit, as_json):
         return
     if not hits:
         fail(f"no symbol matching '{term}'")
-    for rec, sym in hits[:limit]:
-        print(sym_line(rec, sym))
-    if len(hits) > limit:
-        print(f"... {len(hits) - limit} more (raise --limit)")
+    emit("", [sym_line(rec, sym) for rec, sym in hits[:limit]],
+         hint="use a more specific name or Class::method")
 
 
 def iter_routes(records, wp: bool):
@@ -128,11 +172,12 @@ def cmd_routes(records, term, limit, as_json, wp=False):
         return
     if not hits:
         fail(f"no {'hook' if wp else 'route'} matching '{term}'")
+    rows, compact = [], []
     for h in hits[:limit]:
         name = f"  [{h['name']}]" if h.get("name") else ""
-        print(f"{h['method']:8} {h['uri']}{name}  -> {h['handler']}  ({h['file']})")
-    if len(hits) > limit:
-        print(f"... {len(hits) - limit} more (raise --limit)")
+        rows.append(f"{h['method']:8} {h['uri']}{name}  -> {h['handler']}  ({h['file']})")
+        compact.append(f"{h['method']:8} {h['uri']}  -> {h['handler']}")
+    emit("", rows, hint="narrow the search term", compact=compact)
 
 
 def cmd_file(records, term, limit, as_json):
@@ -144,19 +189,17 @@ def cmd_file(records, term, limit, as_json):
     if as_json:
         print(json.dumps(rec, ensure_ascii=False))
         return
-    print(f"{rec['path']}  ({rec['responsibility']}, domain {rec['domain']})")
-    for sym in rec.get("symbols", [])[:limit]:
-        print(f"  {sym_line(rec, sym)}")
-    for route in rec.get("routes", []):
-        print(f"  route: {route['method']} {route['uri']} -> {route['handler']}")
-    for rel in rec.get("relations", [])[:10]:
-        print(f"  {rel['kind']}: {rel['type']} {rel['target']}")
+    rows = [f"  {sym_line(rec, sym)}" for sym in rec.get("symbols", [])[:limit]]
+    rows += [f"  route: {r['method']} {r['uri']} -> {r['handler']}" for r in rec.get("routes", [])]
+    rows += [f"  {r['kind']}: {r['type']} {r['target']}" for r in rec.get("relations", [])[:10]]
     if rec.get("tables"):
-        print(f"  tables: {', '.join(rec['tables'])}")
+        rows.append(f"  tables: {', '.join(rec['tables'])}")
     if rec.get("tested_by"):
-        print(f"  tested by: {', '.join(rec['tested_by'])}")
+        rows.append(f"  tested by: {', '.join(rec['tested_by'])}")
     if rec.get("env_keys"):
-        print(f"  env: {', '.join(rec['env_keys'])}")
+        rows.append(f"  env: {', '.join(rec['env_keys'])}")
+    emit(f"{rec['path']}  ({rec['responsibility']}, domain {rec['domain']})", rows,
+         hint=f"drill in with: ai-dev query snippet <Class::method>")
 
 
 def cmd_domain(records, term, limit, as_json):
@@ -170,22 +213,26 @@ def cmd_domain(records, term, limit, as_json):
     if as_json:
         print(json.dumps([r["path"] for r in ranked], ensure_ascii=False))
         return
-    print(f"domain {members[0]['domain']} — {len(members)} files")
-    print("key files:")
+    rows, compact = ["key files:"], ["key files:"]
     for rec in ranked[:limit]:
         syms = ", ".join(s["name"] for s in rec.get("symbols", [])[:5])
-        print(f"  {rec['path']} ({rec['responsibility']}){': ' + syms if syms else ''}")
+        rows.append(f"  {rec['path']} ({rec['responsibility']}){': ' + syms if syms else ''}")
+        compact.append(f"  {rec['path']} ({rec['responsibility']})")
     routes = [(r, rt) for r in members for rt in r.get("routes", [])]
     if routes:
-        print("routes/entry points:")
-        for rec, rt in routes[:limit]:
-            print(f"  {rt['method']} {rt['uri']} -> {rt['handler']}")
+        rows.append("routes/entry points:")
+        compact.append("routes/entry points:")
+        for _, rt in routes[:limit]:
+            rows.append(f"  {rt['method']} {rt['uri']} -> {rt['handler']}")
+            compact.append(f"  {rt['method']} {rt['uri']}")
     tables = sorted({t for r in members for t in r.get("tables", [])})
     if tables:
-        print(f"tables: {', '.join(tables)}")
+        rows.append(f"tables: {', '.join(tables)}")
     tests = sorted({t for r in members for t in r.get("tested_by", [])})
     if tests:
-        print(f"tests: {', '.join(tests[:10])}")
+        rows.append(f"tests: {', '.join(tests[:10])}")
+    emit(f"domain {members[0]['domain']} — {len(members)} files", rows,
+         hint="narrow with: ai-dev query api <Class> or file <path>", compact=compact)
 
 
 def cmd_table(records, term, limit, as_json):
@@ -227,8 +274,8 @@ def cmd_env(records, term, limit, as_json):
         return
     if not hits:
         fail(f"no env/config key matching '{term}'")
-    for path, keys in hits[:limit]:
-        print(f"{path}: {', '.join(keys)}")
+    emit("", [f"{path}: {', '.join(keys)}" for path, keys in hits[:limit]],
+         hint="use the exact key name")
 
 
 def find_symbol(records, term):
@@ -284,12 +331,19 @@ def cmd_api(records, term, limit, as_json):
         return
     if not entries:
         fail(f"{scope}: no public methods indexed")
-    print(f"{scope} — public API ({len(entries)} methods)")
-    for e in entries[:limit]:
-        doc = f"  — {e['doc']}" if e["doc"] else ""
-        print(f"  {e['fq']}{e['sig']}  [{e['loc']}]{doc}")
-    if len(entries) > limit:
-        print(f"... {len(entries) - limit} more (raise --limit)")
+    shown = entries[:limit]
+    rows = [
+        f"  {e['fq']}{e['sig']}  [{e['loc']}]" + (f"  — {e['doc']}" if e["doc"] else "")
+        for e in shown
+    ]
+    # Compact fallback: drop docblocks and parameter names, keep types.
+    compact = [
+        f"  {e['fq']}{re.sub(r'[$][A-Za-z_]\\w*(\\s*=\\s*[^,)]+)?', '', e['sig'])}  [{e['loc']}]"
+        for e in shown
+    ]
+    emit(f"{scope} — public API ({len(entries)} methods)", rows,
+         hint=f"query a single method: ai-dev query api {term} --limit N, or snippet <Class::method>",
+         compact=compact)
 
 
 def cmd_callers(records, term, limit, as_json):
@@ -310,11 +364,10 @@ def cmd_callers(records, term, limit, as_json):
         return
     if not hits:
         fail(f"no indexed caller of '{term}' (unresolved dynamic calls are not tracked)")
-    print(f"callers of {term} — {len(hits)} file(s)")
-    for h in hits[:limit]:
-        print(f"  {h['path']}  ({h['domain']}, via {h['edge']})")
-    if len(hits) > limit:
-        print(f"... {len(hits) - limit} more (raise --limit)")
+    emit(f"callers of {term} — {len(hits)} file(s)",
+         [f"  {h['path']}  ({h['domain']}, via {h['edge']})" for h in hits[:limit]],
+         hint="filter by domain, or raise --budget",
+         compact=[f"  {h['path']}" for h in hits[:limit]])
 
 
 def cmd_snippet(records, term, limit, as_json, root: Path, pad: int = 3):

@@ -5,7 +5,7 @@ alwaysApply: true
 # Operating Principles
 
 - Inspect before editing; never infer architecture from filenames. Understand the business outcome, current flow, callers, persistence, side effects, and failure modes.
-- Prefer the smallest safe, complete solution. Reuse proven local patterns; no abstractions for hypothetical future use; no drive-by refactors or style rewrites of working modules.
+- Prefer the smallest safe, complete solution. Reuse proven local patterns; no abstractions for hypothetical future use; no drive-by refactors or style rewrites of working modules. For scope sizing, follow `10-minimal-change.mdc`.
 - Preserve existing behavior, contracts, defaults, fallbacks, and validation unless the requirement explicitly changes them. Avoid renaming public methods, routes, fields, events, or config/response keys without a migration strategy; prefer additive changes when compatibility matters; separate behavior changes from cleanup.
 - Treat database integrity, authorization, payment state, inventory, and user data as high-risk boundaries. Do not hide uncertainty — verify it in code, tests, or configuration.
 - For non-trivial work: trace the current end-to-end flow, find similar implementations and tests, identify affected files/data/API/permissions/jobs/events, define invariants and failure behavior, plan briefly, implement in testable vertical slices, run targeted tests at each boundary, and finish with a regression/performance/security review. Do not ask for approval unless the user requested an approval gate.

@@ -18,6 +18,7 @@
   Deliberately a small fixed tool set: project symbols are *data returned by* these tools, never one tool declaration per symbol (which would push thousands of declarations into every request).
 - Adapter and navigation rule text updated so agents actually reach for `api`/`snippet`/`callers` instead of reading files; `ai-dev-query` now reads its supported index version from the sibling indexer so the two can never drift on a format bump.
 - **Removed `last-run.json` and delta tracking.** The index no longer writes a per-run added/modified/removed file, and `ai-dev query changed` / MCP `changed_files` are gone — use `ai-dev query map`, domain/file lookups, or git for orientation instead.
+- **New always-on rule `00-core/10-minimal-change.mdc`.** Keeps diffs proportional to the request: default one file, no new layers/files for trivial work, explicit stop-and-explain before exceeding three files.
 
 ## 1.4.0
 

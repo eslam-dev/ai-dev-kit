@@ -143,6 +143,8 @@ Locate work through the project index — tiered, stopping as soon as the work i
 7. Grep a single line from `SYMBOLS.jsonl` for anything the above doesn't answer — never read it whole.
 8. On demand only: `ROUTES.md` (routing), `SCHEMA.md` (database schema), `FRAMEWORK.md` (events, policies, queues, schedule), `HOOKS.md` (WordPress hooks), `RELATIONS.md` (dependency tracing), `FILES.md` (full inventory).
 
+Keep every change proportional to the request: edit in place with targeted replacements, never rewrite a whole file to change part of it, do not create new files (or README/summary/notes files) for small work, and make no drive-by renames, reformatting, or refactors in code you were not asked to touch. Review the final diff — every changed line must trace to the request.
+
 Open a full source file only when you are about to change it, or when the index is missing detail. The index is never authoritative for security, payments, authorization, tenancy, concurrency, migrations, destructive operations, or production incidents — verify those directly in source. Refresh with `ai-dev .` after source changes.
 EOF
 

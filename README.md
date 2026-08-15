@@ -184,7 +184,7 @@ concurrency, migrations, destructive operations, or production incidents.
 categories a project actually needs are created (a WordPress plugin gets zero Laravel rules):
 
 ```text
-00-core/              # always: navigation (index-first + query), operating principles, router, maintenance
+00-core/              # always: navigation, operating principles, minimal-change, router, maintenance
 05-project-bootstrap/ # new projects & Laravel: stack decision workflow (loads only when bootstrapping)
 10-laravel/           # Laravel: architecture, controllers, services, models, validation, jobs,
                       #   queues/Horizon, multi-tenancy (gated on tenancy packages)

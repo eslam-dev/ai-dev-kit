@@ -1,0 +1,47 @@
+---
+description: Keep every change proportional to the request — smallest diff, fewest files
+alwaysApply: true
+---
+# Minimal Change Discipline
+
+The size of the diff must match the size of the request. A one-line problem gets a one-line fix.
+
+## Default scope
+
+- **1 file** is the default. Touch a second file only when the project's existing pattern clearly requires it (e.g. Form Request + controller, migration + model).
+- **Before exceeding 3 files**, stop and state why — breadth must be deliberate, never accidental.
+- **Never scaffold** a new module, layer, or folder tree for a trivial fix. If the answer fits where the code already lives, put it there.
+
+## Edit in place
+
+- Use targeted replacements. Never rewrite or regenerate a whole file to change part of it.
+- Never reorder, reformat, or restructure code you were not asked to touch.
+- Never extract a new class/helper/service "for cleanliness" during a bug fix or one-field change.
+
+## Do not create files for small work
+
+No new class, helper, service, action, DTO, repository, wrapper, config file, trait, or `utils` module when the change fits an existing file. A new file needs a reason you can state in one sentence.
+
+Common overreach to reject:
+- One validation rule → new `StoreXRequest` **and** new `XService` **and** new `XAction`.
+- Typo or null-check fix → new helper + test file refactor across the module.
+- Single Blade/Inertia label change → new component + layout restructure.
+- Config tweak → new config file + service provider + docs.
+
+## No unrequested side artifacts
+
+Do not add README updates, summary/notes/migration files, changelog entries, examples, ADRs, or scratch files unless the task asked for them or the project's own convention requires them.
+
+## No drive-by changes
+
+No import reordering, renaming, style fixes, dependency bumps, or "while I'm here" refactors in unrelated code. If you spot a real problem outside scope, report it — do not fix it silently.
+
+## Reuse before adding
+
+Check the project index (`ai-dev query`) for an existing function, pattern, or rule that already covers the need before writing anything new.
+
+## Prove the scope before finishing
+
+Review the final diff: every touched file and every changed line must trace directly to the request. Revert whatever does not.
+
+If a task genuinely requires touching many files, say why first, then do it — breadth must be a deliberate decision, never a side effect.

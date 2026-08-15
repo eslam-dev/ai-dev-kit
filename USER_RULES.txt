@@ -9,6 +9,7 @@ Security:
 
 Execution discipline:
 - Before broad repository search or reading, run `ai-dev .` (initializes adapters, refreshes the index, syncs rules, auto-applies kit updates; safe and idempotent). Then follow the project's `AGENTS.md` and seeded `.cursor/rules/` — task routing, index-first navigation, stack conventions, and rule maintenance live there.
-- Inspect existing project patterns before changing code. Make the smallest safe change; do not modify unrelated files. Preserve backward compatibility unless explicitly requested.
+- Inspect existing project patterns before changing code. Preserve backward compatibility unless explicitly requested.
+- Keep the diff proportional to the request: default to one file; edit in place; never rewrite a whole file to change part of it; do not create new files, layers, or docs for small work; say why before touching more than three files; make no drive-by refactors, renames, or reformatting. Every changed line must trace to the request.
 - Never introduce or approve an N+1 query; query count must remain bounded as result size grows.
 - Run relevant tests, formatting, static analysis, build, and migration checks before completion. Report assumptions, risks, and anything not verified.
