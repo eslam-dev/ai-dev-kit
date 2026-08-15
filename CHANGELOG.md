@@ -11,12 +11,13 @@
   - `api <Class|domain|path>` — the callable surface: every public method with signature, line range, and summary, no bodies.
   - `snippet <Class::method>` — only the lines that symbol occupies, with line numbers. On a 60-method class this is **~104 tokens instead of ~3,095 for the whole file (97% less)**.
   - `callers <Class::method>` — every indexed file that calls it, for edit-impact before changing a signature.
-- **`ai-dev-mcp` (new command): an MCP stdio server** exposing the index as 11 native tools (`project_map`, `find_symbol`, `list_api`, `read_symbol`, `find_callers`, `find_route`, `find_hook`, `describe_file`, `describe_domain`, `describe_table`, `changed_files`). Register once and Claude Code / Cursor call lookups directly instead of shelling out; the parsed index stays warm in memory between calls and is re-read only when `SYMBOLS.jsonl` changes. Read-only — it never writes to the project and never rebuilds the index, it reports staleness.
+- **`ai-dev-mcp` (new command): an MCP stdio server** exposing the index as 10 native tools (`project_map`, `find_symbol`, `list_api`, `read_symbol`, `find_callers`, `find_route`, `find_hook`, `describe_file`, `describe_domain`, `describe_table`). Register once and Claude Code / Cursor call lookups directly instead of shelling out; the parsed index stays warm in memory between calls and is re-read only when `SYMBOLS.jsonl` changes. Read-only — it never writes to the project and never rebuilds the index, it reports staleness.
   ```bash
   claude mcp add ai-dev -- ai-dev-mcp --project .
   ```
   Deliberately a small fixed tool set: project symbols are *data returned by* these tools, never one tool declaration per symbol (which would push thousands of declarations into every request).
 - Adapter and navigation rule text updated so agents actually reach for `api`/`snippet`/`callers` instead of reading files; `ai-dev-query` now reads its supported index version from the sibling indexer so the two can never drift on a format bump.
+- **Removed `last-run.json` and delta tracking.** The index no longer writes a per-run added/modified/removed file, and `ai-dev query changed` / MCP `changed_files` are gone — use `ai-dev query map`, domain/file lookups, or git for orientation instead.
 
 ## 1.4.0
 

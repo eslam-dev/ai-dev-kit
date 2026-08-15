@@ -42,7 +42,7 @@ alwaysApply: true
 # Project Navigation
 
 Run `ai-dev .` before broad repository exploration, then locate work tiered — stop as soon as it is located:
-1. `ai-dev query map` / `changed` — orientation and the delta since the last run.
+1. `ai-dev query map` — orientation: stack, tooling, domains.
 2. `ai-dev query symbol|route|hook|file|domain|table|env <term>` — exact lookups in a few lines.
 3. `ai-dev query api <Class|domain>` — public signatures, ranges, and summaries without opening a file; `snippet <Class::method>` — only that symbol's lines; `callers <Class::method>` — edit impact.
 4. `.ai/project-index/PROJECT_MAP.md`, then the one relevant `DOMAINS/<domain>.md`; grep a single line from `SYMBOLS.jsonl` only when query cannot answer — never read it whole.

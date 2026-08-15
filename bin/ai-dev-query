@@ -12,7 +12,6 @@ Answers in a few lines what would otherwise cost a tiered read chain:
   ai-dev-query domain Billing               # domain brief (key files, routes, tables)
   ai-dev-query table orders                 # columns + files touching the table
   ai-dev-query env STRIPE_KEY               # files using an env/config key
-  ai-dev-query changed                      # files changed since the last index run
   ai-dev-query map                          # stack + domains, ultra-compact
 
 Never indexes or writes anything. If the index is missing or stale it prints
@@ -346,21 +345,6 @@ def cmd_snippet(records, term, limit, as_json, root: Path, pad: int = 3):
         print(f"{str(i).rjust(width)}| {line}")
 
 
-def cmd_changed(root, as_json):
-    path = root / ".ai/project-index/last-run.json"
-    if not path.exists():
-        fail("no last-run.json — run `ai-dev .` first")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if as_json:
-        print(json.dumps(data, ensure_ascii=False))
-        return
-    for kind, sign in (("added", "+"), ("modified", "~"), ("removed", "-")):
-        for rel in data.get(kind, []):
-            print(f"{sign} {rel}")
-    if not any(data.get(k) for k in ("added", "modified", "removed")):
-        print("no changes recorded by the last index run")
-
-
 def cmd_map(records, root, as_json):
     manifest = {}
     mpath = root / ".ai/project-index/manifest.json"
@@ -394,7 +378,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", choices=[
         "symbol", "api", "snippet", "callers", "route", "hook", "file",
-        "domain", "table", "env", "changed", "map",
+        "domain", "table", "env", "map",
     ])
     ap.add_argument("term", nargs="?", default="")
     ap.add_argument("--project", default=".")
@@ -403,10 +387,6 @@ def main() -> None:
     args = ap.parse_args()
 
     root = Path(args.project).resolve()
-    if args.command == "changed":
-        cmd_changed(root, args.as_json)
-        return
-
     records = load_records(root)
     if args.command == "map":
         cmd_map(records, root, args.as_json)

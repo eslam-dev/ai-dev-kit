@@ -138,7 +138,6 @@ check "no wordpress rules"                      "test ! -d '$L/.cursor/rules/25-
 check "no inertia rules (not detected)"         "test ! -d '$L/.cursor/rules/15-inertia-react'"
 check "query symbol with line+owner"            "(cd '$L' && python3 '$BIN/ai-dev-query' symbol refund | grep -q 'OrderController)')"
 check "query table columns"                     "(cd '$L' && python3 '$BIN/ai-dev-query' table orders | grep -q 'status:string')"
-check "query changed lists files"               "(cd '$L' && python3 '$BIN/ai-dev-query' changed | grep -q 'OrderController')"
 
 # idempotency: second run writes nothing
 sleep 1.1

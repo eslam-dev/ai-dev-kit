@@ -101,7 +101,6 @@ retired (only when still pristine). `--force` overrides.
 │                       #   without permission_callback are flagged for audit
 ├── RELATIONS.md        # on demand: project-internal imports, Eloquent/Doctrine relations, tables
 ├── FILES.md            # on demand: compact path → domain inventory
-├── last-run.json       # what changed since the previous index run (ai-dev query changed)
 └── manifest.json       # per-file SHA-256 hashes + the detected stack object
 ```
 
@@ -122,7 +121,6 @@ One cheap command instead of a read chain:
 
 ```bash
 ai-dev query map                        # stack + tooling + domains, ultra-compact
-ai-dev query changed                    # files changed since the last index run
 ai-dev query symbol UserController      # path:line, kind, visibility, owning class, attributes
 ai-dev query api RefundService          # every public signature + line range + summary — no bodies
 ai-dev query snippet RefundService::refund   # only the lines that symbol occupies
@@ -164,7 +162,7 @@ Cursor — `.cursor/mcp.json`:
 {"mcpServers": {"ai-dev": {"command": "ai-dev-mcp", "args": ["--project", "."]}}}
 ```
 
-It exposes 11 read-only tools: `project_map`, `find_symbol`, `list_api`, `read_symbol`, `find_callers`, `find_route`, `find_hook`, `describe_file`, `describe_domain`, `describe_table`, `changed_files`. The tool set is deliberately small and fixed — your project's symbols are *data returned by* these tools, never one tool declaration per symbol, which would push thousands of declarations into every request and wreck both the token budget and tool-selection accuracy. The server never writes to the project and never rebuilds the index; it reports staleness and tells you to run `ai-dev .`.
+It exposes 10 read-only tools: `project_map`, `find_symbol`, `list_api`, `read_symbol`, `find_callers`, `find_route`, `find_hook`, `describe_file`, `describe_domain`, `describe_table`. The tool set is deliberately small and fixed — your project's symbols are *data returned by* these tools, never one tool declaration per symbol, which would push thousands of declarations into every request and wreck both the token budget and tool-selection accuracy. The server never writes to the project and never rebuilds the index; it reports staleness and tells you to run `ai-dev .`.
 
 ## Mandatory agent behavior
 

@@ -1152,7 +1152,6 @@ def main() -> None:
     old_hashes = old_manifest.get("files", {})
     records: dict[str, Any] = {}
     manifest_files: dict[str, str] = {}
-    added, modified = [], []
 
     for rel, path in current_paths.items():
         h = digest(path)
@@ -1161,11 +1160,6 @@ def main() -> None:
             records[rel] = old_symbols[rel]
         else:
             records[rel] = parse(path, rel, is_wp, psr4_dirs)
-            if rel not in old_hashes:
-                added.append(rel)
-            elif old_hashes.get(rel) != h:
-                modified.append(rel)
-    removed = sorted(set(old_hashes) - set(current_paths))
 
     # file -> test mapping: match *Test classes and project-namespace imports.
     class_files: dict[str, str] = {}
@@ -1445,25 +1439,12 @@ def main() -> None:
     }
     write_if_changed(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
 
-    # Delta view for follow-up tasks (`ai-dev query changed`). Content-only —
-    # no timestamps, so output stays deterministic. A run that changed nothing
-    # keeps the previous delta (the most recent real change set) untouched.
     last_run_path = out / "last-run.json"
-    if added or modified or removed or not last_run_path.exists():
-        last_run = {
-            "added": sorted(added),
-            "modified": sorted(modified),
-            "removed": removed,
-        }
-        write_if_changed(
-            last_run_path,
-            json.dumps(last_run, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-        )
+    if last_run_path.exists():
+        last_run_path.unlink()
 
     print(f"Project index: {out}")
     print(f"Indexed: {len(records)} files ({', '.join(stack_labels(stack))})")
-    if added or modified or removed:
-        print(f"Changed since last index: +{len(added)} ~{len(modified)} -{len(removed)}")
 
 
 if __name__ == "__main__":

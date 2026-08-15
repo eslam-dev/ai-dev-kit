@@ -134,7 +134,7 @@ write_managed "$PROJECT/AGENTS.md" <<'EOF'
 At the start of every task, run `ai-dev .` (initializes adapters, refreshes the index, syncs rules; safe, idempotent, auto-applies kit updates).
 
 Locate work through the project index — tiered, stopping as soon as the work is located:
-1. `ai-dev query map` — stack, tooling, domains. `ai-dev query changed` — what changed since the last index run (start here on follow-up tasks).
+1. `ai-dev query map` — stack, tooling, domains.
 2. `ai-dev query symbol|route|hook|file|domain|table|env <term>` — exact lookups answered in a few lines.
 3. `ai-dev query api <Class|domain>` — **every public method's full signature, line range, and summary, without reading any file.** Use this before calling or modifying code; do not open a file just to learn a signature.
 4. `ai-dev query snippet <Class::method>` — **only the lines that symbol occupies.** Never read a whole file for one method.

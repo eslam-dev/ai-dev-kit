@@ -108,11 +108,6 @@ TOOLS = {
         {"name": ("string", "Table name")},
         ["name"], "table",
     ),
-    "changed_files": (
-        "Files added, modified, or removed since the previous index run — the cheap way to "
-        "orient on a follow-up task.",
-        {}, [], "changed",
-    ),
 }
 
 
@@ -149,9 +144,7 @@ def run_command(index: Index, key: str, args: dict) -> str:
     buffer = io.StringIO()
     try:
         with contextlib.redirect_stdout(buffer):
-            if key == "changed":
-                Q.cmd_changed(index.root, False)
-            elif key == "map":
+            if key == "map":
                 Q.cmd_map(index.records(), index.root, False)
             else:
                 term = str(next((v for k, v in args.items() if k != "limit"), ""))
