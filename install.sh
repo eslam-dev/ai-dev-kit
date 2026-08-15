@@ -65,14 +65,16 @@ install_links "$ROOT/source/skills" "$CURSOR_HOME/skills" "ai-dev-"
 
 RULES_FILE="$ROOT/USER_RULES.txt"
 COPIED=false
+# Clipboard helpers daemonize and inherit stdout — redirect it, or piping
+# install.sh (e.g. `./install.sh | tee`) never sees EOF and hangs.
 if command -v pbcopy >/dev/null 2>&1; then
-  pbcopy < "$RULES_FILE" && COPIED=true
+  pbcopy < "$RULES_FILE" >/dev/null 2>&1 && COPIED=true
 elif command -v wl-copy >/dev/null 2>&1; then
-  timeout 2 wl-copy < "$RULES_FILE" && COPIED=true
+  timeout 2 wl-copy < "$RULES_FILE" >/dev/null 2>&1 && COPIED=true
 elif command -v xclip >/dev/null 2>&1; then
-  timeout 2 xclip -selection clipboard < "$RULES_FILE" && COPIED=true
+  timeout 2 xclip -selection clipboard < "$RULES_FILE" >/dev/null 2>&1 && COPIED=true
 elif command -v xsel >/dev/null 2>&1; then
-  timeout 2 xsel --clipboard --input < "$RULES_FILE" && COPIED=true
+  timeout 2 xsel --clipboard --input < "$RULES_FILE" >/dev/null 2>&1 && COPIED=true
 fi
 
 printf '\nInstall complete — ai-dev-kit %s. Nothing else required.\n' "$(cat "$ROOT/VERSION")"
