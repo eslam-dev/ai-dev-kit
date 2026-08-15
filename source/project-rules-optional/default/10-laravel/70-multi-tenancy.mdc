@@ -1,0 +1,15 @@
+---
+description: Any code touching tenant-owned data in a multi-tenant application — models, queries, jobs, cache, storage, routes
+globs: "app/**/*.php,routes/**/*.php,database/**/*.php"
+alwaysApply: false
+---
+# Multi-Tenancy
+- Every query, cache key, queue payload, filesystem path, session, and signed URL must carry tenant scope. An unscoped access path to tenant data is a defect even if "currently unreachable".
+- Enforce scoping structurally: global scopes (or the tenancy package's equivalent) on every tenant-owned model, or a mandatory tenant `where` on every access — never rely on callers remembering.
+- Keep central vs tenant separation strict: central connection/database for tenants, plans, domains; tenant connection for tenant data. Never join or query across them ad hoc; migrations are split per side.
+- Cross-tenant read or write reachable by a user (IDOR) is a Critical finding — fix immediately, never defer.
+- Never trust a client-supplied tenant ID (header, body, route param). Resolve tenant from authenticated context, domain, or verified token claims; verify route-model bindings resolve within the current tenant.
+- Queued jobs must capture the tenant explicitly and re-initialize tenancy in `handle()`; the dispatcher's context is gone by execution time.
+- Cache: prefix or tag keys per tenant; flushing must not cross tenants.
+- Signed/temporary URLs must embed and validate tenant scope on consumption.
+- Tests must run with at least two tenants and assert tenant B never sees tenant A's data — including counts, exports, and aggregates.

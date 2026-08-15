@@ -1,0 +1,14 @@
+---
+description: Before declaring any PHP change complete, or when deciding which test/lint/analysis commands to run
+globs: "composer.json,**/*.php"
+alwaysApply: false
+---
+# Quality Gates
+- Read `composer.json` `scripts` FIRST — the project's own test, lint, analyse, and fix commands are the only correct ones. The `.ai/project-index/PROJECT_MAP.md` "Quality gates" section lists detected tools.
+- Before completion, run the project's test command scoped to affected paths, then the static analyser, then the formatter/linter — in that order. A change is not done until its gates pass.
+- Never invent a tool the project does not use: no adding PHPStan to a Psalm project, no Pint on a php-cs-fixer project, no PHPUnit invocation in a Pest project.
+- Never hand-format code — run the configured formatter; never "fix" style by eye.
+- Prefer script aliases (`composer test`, `composer analyse`) over direct binary calls — scripts carry required flags and env.
+- If no scripts exist, detect tools from `require-dev` and committed config files (`phpunit.xml`, `phpstan.neon`, `pint.json`, `.php-cs-fixer.dist.php`) before running anything.
+- Do not weaken a gate to pass it: no skipping tests, lowering analysis levels, or excluding files without explicit user approval.
+- Report which gates ran and their results when finishing a task.

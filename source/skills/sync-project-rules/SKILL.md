@@ -43,4 +43,4 @@ Prefer domain and module names derived from the project itself.
 
 ## Scope
 
-Rules must capture durable conventions and business architecture, not complete source inventories.
+Rules must capture durable conventions and business architecture, not complete source inventories. Do not update rules for cosmetic edits; remove stale statements and keep each rule focused.

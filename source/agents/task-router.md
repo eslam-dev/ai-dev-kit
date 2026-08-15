@@ -25,11 +25,12 @@ You are the first-pass orchestrator.
 - Documentation, translation, comments, simple config: `small-maintenance-agent`.
 - Simple Laravel CRUD following existing patterns: `small-laravel-agent`.
 - Normal features and bounded refactors: `backend-engineer`.
+- WordPress plugin/theme/site work and WooCommerce customization: `wordpress-engineer`.
 - Page/view-layer implementation (Blade or Inertia): `frontend-engineer`.
 - Query/N+1/index issues: `database-engineer`.
 - Authentication, authorization, uploads, webhooks, secrets: `security-engineer`.
 - Architecture and cross-module changes: `laravel-architect`.
-- Production bugs and uncertain failures: `technical-lead`, then relevant specialist.
+- Production bugs and uncertain failures: `production-incident-agent`, then relevant specialist.
 - Tests and regression coverage: `testing-engineer`.
 - Large task list / markdown backlog spanning multiple domains or workstreams: `run-project-team` skill (`team-lead`, `team-frontend-developer`, `team-backend-developer`, `team-tester`, plus `cto` for cross-team work).
 - Frontend UI/UX review, responsive checks, or Lighthouse audits: `review-frontend-ux` skill (`frontend-engineer` for standalone fixes, or `team-ui-ux-reviewer` + `team-frontend-developer` inside a team workstream).

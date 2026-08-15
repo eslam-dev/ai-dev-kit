@@ -6,5 +6,5 @@ find "$CURSOR_HOME/skills" -maxdepth 1 -type l -name 'ai-dev-*' -delete 2>/dev/n
 echo "Removed global Cursor agents and skills. User Rules must be removed manually from Cursor Settings."
 
 
-rm -f "$HOME/.local/bin/ai-dev" "$HOME/.local/bin/ai-dev-init" "$HOME/.local/bin/ai-dev-project-index" "$HOME/.local/bin/ai-dev-project-rules"
+rm -f "$HOME/.local/bin/ai-dev" "$HOME/.local/bin/ai-dev-init" "$HOME/.local/bin/ai-dev-project-index" "$HOME/.local/bin/ai-dev-project-rules" "$HOME/.local/bin/ai-dev-query"
 rm -rf "$HOME/.local/share/ai-dev-kit"

@@ -1,0 +1,14 @@
+---
+description: Handling request input, output rendering, database queries, uploads, HTTP calls, or privileged actions in WordPress PHP
+globs: "**/*.php"
+alwaysApply: false
+---
+# WordPress Security
+- Authorize with `current_user_can()` against the specific capability (and object ID where relevant). `is_admin()` checks the screen, not the user — it is never authorization.
+- Every state change requires a nonce: `wp_nonce_field()`/`wp_create_nonce()` on the form or URL, `check_admin_referer()`/`check_ajax_referer()`/`wp_verify_nonce()` before acting. Nonces complement capability checks, never replace them.
+- Sanitize on input: `sanitize_text_field`, `sanitize_email`, `sanitize_key`, `absint`, `wp_kses_post` — matched to the expected type.
+- Escape on output, late, at echo time: `esc_html`, `esc_attr`, `esc_url`, `esc_js`, `wp_kses_post`. Never trust stored data; escape it where it is printed.
+- Every `$wpdb` query with variables goes through `$wpdb->prepare()` with `%s`/`%d`/`%f` placeholders; table names via `$wpdb->prefix`. No string-concatenated SQL, ever.
+- Outbound HTTP via `wp_safe_remote_get`/`wp_safe_remote_post` (blocks redirects to internal hosts); plain `wp_remote_get` only for fully trusted static URLs.
+- Uploads through `wp_handle_upload()` with an explicit MIME/type whitelist; never move files from `$_FILES` manually.
+- Treat all of `$_REQUEST`/`$_GET`/`$_POST`/`$_SERVER`/`$_COOKIE` as hostile — including hidden fields, referers, and logged-in users' input.

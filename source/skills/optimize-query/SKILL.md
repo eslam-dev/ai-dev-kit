@@ -1,6 +1,6 @@
 ---
 name: optimize-query
-description: Eliminate N+1 queries and optimize Laravel database access without changing behavior.
+description: Investigate and eliminate N+1 queries and optimize Laravel database access without changing behavior.
 ---
 # Optimize Query
 1. Identify the endpoint, job, command, Resource, export, or workflow.
@@ -9,9 +9,9 @@ description: Eliminate N+1 queries and optimize Laravel database access without 
 4. List relationships and aggregates used during iteration or serialization.
 5. Replace per-row queries with eager loading, `withCount`, `withExists`, aggregate subqueries, joins, or batch lookups.
 6. Select required columns while preserving relation keys.
-7. Use pagination, `chunkById`, `lazyById`, or queues for unbounded data.
+7. Use pagination, `chunkById`, `lazyById`, or queues for unbounded data; preserve memory bounds.
 8. Review indexes and execution plans for material queries.
-9. Compare query count for one record and many records; it must remain bounded.
+9. Compare query count at small and larger cardinalities; it must remain bounded.
 10. Add a regression test or query-count assertion for high-risk paths.
 11. Preserve authorization, tenancy, ordering, filters, response shape, and business behavior.
 

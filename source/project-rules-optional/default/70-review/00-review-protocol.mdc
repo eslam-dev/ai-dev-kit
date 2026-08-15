@@ -1,5 +1,5 @@
 ---
-description: Code review protocol
+description: Apply when reviewing code, a pull request, a diff, or completed work before merge or release
 alwaysApply: false
 ---
 # Review Protocol

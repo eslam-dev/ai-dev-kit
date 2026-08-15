@@ -1,117 +1,204 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT="${1:-.}"
+# ai-dev-init [project] [--update]
+#
+# Scaffolds the cross-tool adapter files. Kit-owned content lives inside a
+# managed block (between the ai-dev-kit:begin/end markers); everything a
+# project adds outside the block is preserved forever. With --update,
+# pre-marker legacy files are migrated: pristine kit copies (recognized by
+# hash) are replaced, edited ones get the managed block appended below the
+# project's own content.
+
+UPDATE=0
+PROJECT="."
+for arg in "$@"; do
+  case "$arg" in
+    --update) UPDATE=1 ;;
+    *) PROJECT="$arg" ;;
+  esac
+done
 PROJECT="$(cd "$PROJECT" && pwd)"
-GLOBAL_HOME="${AI_DEV_KIT_HOME:-$HOME/.local/share/ai-dev-kit}"
 
-mkdir -p \
-  "$PROJECT/.ai/project-index/DOMAINS" \
-  "$PROJECT/.cursor/rules" \
-  "$PROJECT/.github" \
-  "$PROJECT/.specify/memory"
+BEGIN_MARK='<!-- ai-dev-kit:begin — managed block, updated automatically; add customizations outside it -->'
+END_MARK='<!-- ai-dev-kit:end -->'
 
-write_if_missing() {
-  local target="$1"
-  if [[ -e "$target" ]]; then
+# sha256 of every pristine adapter body ever shipped before managed blocks
+# existed (extracted from the full git history of this script and the
+# indexer's README seeding). Frozen: markers carry all future updates.
+LEGACY_HASHES="\
+04b1547eb367795af869f3e5b5ade95b98177d8110c62c61107ac5cf58149fb7 \
+adecb8fa139985ba773e87f62cbd41238f49e5ca116b00b77471dcf718ad83d2 \
+1fcafb4eb3aa489d3d92667936783e3b1ec4b8aff327359d27decddb03cd50fb \
+24c592832c180676cdda8d0ebb2ac03244c415b2f5c8ed65e0b1a85308336721 \
+16a5ce97eb5adae8c180211c563c64c38d0980de08710949fbc7401739ee4581 \
+60603e188c1936eab92280fc500ebb27182d4ff0b05bc07a86ffcc9eb68a6963 \
+6fff90ab8542eda0dc05ede07e2a412d9ff61c73752e9ee3daa8b35d15e9cdc0 \
+ed554ec8600a18a9d2afd89a84ad642ba172119d3f40bfccfa0b7693efde5e96 \
+6d840ec858d544ba14b6fc54df0511941f7145408d9d2c8c869697b78259773f \
+b7d52a18f1394edfda454ca00ad4002e5b926cc0a41ddd3b1789dca76d5e6d69 \
+231b2a85fd26a415f5e296ccb95f0e063f9abe40108a53613305e7f56f6a29d6 \
+c5a5b121e4ad954bb37d5bd3aa9eb7638e2e20e77540cadb95582c14c6ad9ba6 \
+c43a52ed85032109b88fc6ecf39ed78cfefc7d5709b86129aae5db1f3cb96525 \
+ac4a83a892d446989104ad80a1688f494f2217216f90fac4c0b7f9d5e670f84a \
+2ba918b3ae168af3f73a49cb025b994d10229444e6aa9aab94ff72593beb8ec5 \
+448e4e514ba426b84ecd0e273add5d7106ef59c09821a5634307631ff3c7427d \
+3089cf04e92e7bb2808bcad87ec9f2f876bb0b1c97fcadd21d6655bd6480aad9"
+
+NOTICES=""
+
+hash_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+is_legacy() {
+  case " $LEGACY_HASHES " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+replace_block() {  # $1=file  $2=replacement block; prints the rewritten file
+  local file="$1" block="$2" out="" in_block=0 line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      *'ai-dev-kit:begin'*)
+        in_block=1
+        out="${out}${block}"$'\n'
+        ;;
+      *'ai-dev-kit:end'*)
+        in_block=0
+        ;;
+      *)
+        if [ "$in_block" -eq 0 ]; then
+          out="${out}${line}"$'\n'
+        fi
+        ;;
+    esac
+  done < "$file"
+  printf '%s' "$out"
+}
+
+write_managed() {  # $1=target; kit body (without markers) on stdin
+  local target="$1" body block
+  body="$(cat)"
+  block="${BEGIN_MARK}"$'\n'"${body}"$'\n'"${END_MARK}"
+
+  if [[ ! -e "$target" ]]; then
+    mkdir -p "$(dirname "$target")"
+    printf '%s\n' "$block" > "$target"
+    return 0
+  fi
+
+  if grep -q 'ai-dev-kit:begin' "$target" && grep -q 'ai-dev-kit:end' "$target"; then
+    local new
+    new="$(replace_block "$target" "$block")"
+    if [ "$new" != "$(cat "$target")" ]; then
+      printf '%s\n' "$new" > "$target"
+    fi
+    return 0
+  fi
+
+  # Unmarked pre-1.4 file. Plain runs keep the old skip-if-exists behavior;
+  # --update migrates it.
+  if [[ "$UPDATE" -eq 1 ]]; then
+    if is_legacy "$(hash_file "$target")"; then
+      printf '%s\n' "$block" > "$target"
+    else
+      printf '\n%s\n' "$block" >> "$target"
+      NOTICES="${NOTICES}  $target: pre-existing content kept above the new ai-dev-kit block — review for duplicated instructions"$'\n'
+    fi
+  fi
+  return 0
+}
+
+write_generated() {  # $1=target; kit-owned generated file, refreshed when it differs
+  local target="$1" body
+  body="$(cat)"
+  if [[ -e "$target" ]] && [ "$body" = "$(cat "$target")" ]; then
     return 0
   fi
   mkdir -p "$(dirname "$target")"
-  cat > "$target"
+  printf '%s\n' "$body" > "$target"
 }
 
-write_if_missing "$PROJECT/.cursor/rules/00-project-index-first.mdc" <<'EOF'
----
-description: Always consult and maintain the project-local intelligence index first
-alwaysApply: true
----
-Before broad repository exploration, run `ai-dev .`.
-Read `.ai/project-index/PROJECT_MAP.md` (stack, domains, entry points, key files), then only the one relevant `DOMAINS/<domain>.md` — most tasks need nothing else.
-For exact class/method/route lookups, grep one line from `SYMBOLS.jsonl` (one JSON record per file), e.g. `grep '"UserController"' .ai/project-index/SYMBOLS.jsonl` — never read it whole.
-`ROUTES.md`, `RELATIONS.md`, and `FILES.md` are on-demand only: routing questions, dependency tracing, or a full file inventory. Do not read them by default.
-Use the map to choose the smallest relevant source set.
-Open real source files when the map is incomplete, stale, uncertain, sensitive, or the code will be changed.
-After source changes, run `ai-dev .` again.
-The index is not authoritative for security, payments, authorization, migrations, concurrency, or production incidents.
+mkdir -p "$PROJECT/.ai/project-index/DOMAINS"
+
+write_managed "$PROJECT/AGENTS.md" <<'EOF'
+# Agent Instructions
+
+At the start of every task, run `ai-dev .` (initializes adapters, refreshes the index, syncs rules; safe, idempotent, auto-applies kit updates).
+
+Locate work through the project index — tiered, stopping as soon as the work is located:
+1. `ai-dev query <symbol|route|file|domain|table|hook|env> <term>` — exact lookups answered in a few lines. `ai-dev query map` prints stack + domains; `ai-dev query changed` lists files changed since the last index run (ideal for follow-up tasks).
+2. `.ai/project-index/PROJECT_MAP.md` — stack, domains, entry points, key files, quality gates. Often enough on its own.
+3. The one relevant `.ai/project-index/DOMAINS/<domain>.md`.
+4. Grep a single line from `.ai/project-index/SYMBOLS.jsonl` for anything query doesn't answer — never read it whole.
+5. On demand only: `ROUTES.md` (routing), `SCHEMA.md` (database schema), `FRAMEWORK.md` (events, policies, queues, schedule), `HOOKS.md` (WordPress hooks), `RELATIONS.md` (dependency tracing), `FILES.md` (full inventory).
+
+Open only the required source files. The index is never authoritative for security, payments, authorization, tenancy, concurrency, migrations, destructive operations, or production incidents — verify those directly in source. Refresh with `ai-dev .` after source changes.
 EOF
 
-write_if_missing "$PROJECT/.github/copilot-instructions.md" <<'EOF'
+write_managed "$PROJECT/CLAUDE.md" <<'EOF'
+# Project AI Workflow
+
+At the start of every task, run `ai-dev .`, then read and follow `AGENTS.md` — the canonical index-first instructions (`ai-dev query` lookups, tiered reads of `.ai/project-index/`).
+EOF
+
+if [[ -d "$PROJECT/.github" ]]; then
+  write_managed "$PROJECT/.github/copilot-instructions.md" <<'EOF'
 # Project Intelligence First
 
 Before broad searching or reading, run `ai-dev .`.
 
-Read the project-local index tiered — stop as soon as you know where to work:
-1. `.ai/project-index/PROJECT_MAP.md` — stack, domains, entry points, key files. Often enough on its own.
-2. The one relevant `.ai/project-index/DOMAINS/<domain>.md`.
-3. Exact symbol/route lookups: grep a single line from `.ai/project-index/SYMBOLS.jsonl` (one JSON record per file) — never read it whole.
-4. On demand only: `ROUTES.md` (routing questions), `RELATIONS.md` (dependency tracing), `FILES.md` (full inventory).
+Locate work tiered — stop as soon as you know where to work:
+1. `ai-dev query <symbol|route|file|domain> <term>` — exact lookups in a few lines.
+2. `.ai/project-index/PROJECT_MAP.md` — stack, domains, entry points, key files.
+3. The one relevant `.ai/project-index/DOMAINS/<domain>.md`.
+4. On demand only: `ROUTES.md`, `SCHEMA.md`, `FRAMEWORK.md`, `RELATIONS.md`, `FILES.md`.
 
-Use it to identify the smallest relevant set of real files. Verify source when data is missing, stale, uncertain, sensitive, or being modified. Refresh the index after code changes.
+Open only the smallest relevant set of real files. Verify security, payments, authorization, and migration logic directly in source. Refresh the index after code changes (`ai-dev .`).
 EOF
+fi
 
-write_if_missing "$PROJECT/CLAUDE.md" <<'EOF'
-# Mandatory Project Intelligence Workflow
-
-At the beginning of every task, run:
-
-```bash
-ai-dev .
-```
-
-Always inspect `.ai/project-index/` before broad repository exploration, tiered: read `PROJECT_MAP.md` (stack, domains, entry points, key files), then only the one relevant `DOMAINS/<domain>.md`. For exact class/method/route lookups, grep a single line from `SYMBOLS.jsonl` (one JSON record per file) instead of re-reading source — never read it whole. `ROUTES.md`, `RELATIONS.md`, and `FILES.md` are on-demand only (routing questions, dependency tracing, full inventory) — do not read them by default. Verify real source for sensitive or changed logic. Re-run the indexer after modifications.
-EOF
-
-write_if_missing "$PROJECT/AGENTS.md" <<'EOF'
-# Agent Instructions
-
-All coding agents must use the project-local index first — tiered, stopping as soon as the work is located.
-
-1. Run `ai-dev .`.
-2. Read `.ai/project-index/PROJECT_MAP.md` (stack, domains, entry points, key files) — often enough on its own.
-3. Read only the one relevant `.ai/project-index/DOMAINS/<domain>.md`.
-4. For exact class/method/route lookups, grep a single line from `.ai/project-index/SYMBOLS.jsonl` (one JSON record per file) — never read it whole.
-5. On demand only: `ROUTES.md` (routing questions), `RELATIONS.md` (dependency tracing), `FILES.md` (full inventory).
-6. Open only the required source files.
-7. Verify sensitive logic directly.
-8. Refresh the index after source changes.
-EOF
-
-write_if_missing "$PROJECT/.specify/memory/project-index.md" <<'EOF'
+if [[ -d "$PROJECT/.specify" ]]; then
+  write_managed "$PROJECT/.specify/memory/project-index.md" <<'EOF'
 # Project Index Integration
 
-Specifications, plans, and implementation tasks must consult the canonical project map at:
-
-```text
-.ai/project-index/
-```
-
-Before creating or updating a specification:
-- refresh the index with `ai-dev-project-index .`;
-- inspect `PROJECT_MAP.md` (stack, domains, entry points, key files), then only the relevant `DOMAINS/<domain>.md`;
-- reference exact file paths and symbols, grepping single lines from `SYMBOLS.jsonl` (one JSON record per file) instead of re-reading source;
-- consult `ROUTES.md`, `RELATIONS.md`, or `FILES.md` only when the spec needs routing, dependency, or full-inventory detail;
-- mark inferred information as inferred;
-- verify sensitive flows against current source.
+Specifications, plans, and tasks must consult `.ai/project-index/` (the canonical project map). Follow `AGENTS.md` at the repository root: run `ai-dev .` first, use `ai-dev query` and tiered index reads, reference exact file paths and symbols, mark inferred information as inferred, and verify sensitive flows against current source.
 EOF
+fi
 
-write_if_missing "$PROJECT/.ai/project-index/README.md" <<'EOF'
+write_generated "$PROJECT/.ai/project-index/README.md" <<'EOF'
 # Project Intelligence Index
 
-Generated and incrementally maintained by `ai-dev-project-index`.
+Generated and incrementally maintained by `ai-dev-project-index` (ai-dev-kit).
 
-This folder is intentionally stored inside the project so Cursor, VS Code/Copilot, Claude Code, and specification workflows can reuse the same map.
-
-Do not edit generated files manually. Rebuild with:
-
-```bash
-ai-dev-project-index .
-```
+Shared by Cursor, VS Code/Copilot, Claude Code, and spec workflows so every tool reuses the same map. Do not edit generated files manually. Rebuild with `ai-dev-project-index .` (force a full re-parse with `--full`).
 EOF
 
+# The index-first Cursor rule is owned by ai-dev-project-rules since kit 1.4.0
+# (00-core/project-navigation.mdc). Remove the retired init-seeded copy when
+# it is still a pristine kit version; edited copies are left alone.
+LEGACY_MDC="$PROJECT/.cursor/rules/00-project-index-first.mdc"
+if [[ "$UPDATE" -eq 1 && -f "$LEGACY_MDC" ]] && is_legacy "$(hash_file "$LEGACY_MDC")"; then
+  rm "$LEGACY_MDC"
+fi
+
 printf 'Project AI integration initialized:\n'
-printf '  Cursor: .cursor/rules/00-project-index-first.mdc\n'
-printf '  VS Code/Copilot: .github/copilot-instructions.md\n'
-printf '  Claude Code: CLAUDE.md\n'
-printf '  Generic agents: AGENTS.md\n'
-printf '  Specify: .specify/memory/project-index.md\n'
+printf '  Canonical protocol: AGENTS.md (managed block)\n'
+printf '  Claude Code: CLAUDE.md -> AGENTS.md\n'
+if [[ -d "$PROJECT/.github" ]]; then
+  printf '  VS Code/Copilot: .github/copilot-instructions.md\n'
+fi
+if [[ -d "$PROJECT/.specify" ]]; then
+  printf '  Specify: .specify/memory/project-index.md -> AGENTS.md\n'
+fi
 printf '  Index: .ai/project-index/\n'
+if [[ -n "$NOTICES" ]]; then
+  printf 'Migration notices:\n%s' "$NOTICES"
+fi

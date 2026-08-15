@@ -1,36 +1,18 @@
 ---
-description: Automatically classify tasks and route them to the smallest capable agent and model tier
+description: Classify every task and route it to the smallest capable agent and model tier before execution
 alwaysApply: true
 ---
 # Agent and Model Router
 
-Use the smallest, cheapest capable agent for the task; never a frontier reasoning model for routine work. Classify every task before execution by complexity, risk, scope, and uncertainty.
+Classify every task before execution by complexity, risk, scope, and uncertainty; use the smallest capable agent/model. Full procedure and team setup: `route-task` skill.
 
-## Tiers
+| Tier | Model | Typical work | Scope |
+|---|---|---|---|
+| S | fast/low-cost | renames, lint fixes, obvious localized bugs, simple tests/CRUD on an existing pattern, docs/config, search | 1–3 files; no schema, security, or ambiguous business decision |
+| M | balanced | normal features, multi-file fixes, new endpoint on existing architecture, moderate refactors, low/medium-risk migrations | 3–12 files, one bounded module |
+| L | strongest | new/cross-module architecture, complex DB design, unclear business rules, high-impact performance, production incidents, broad legacy refactors | >12 files, several contexts, or high uncertainty |
+| XL | lead + team | multiple independent workstreams, risky production migration/critical release — stand up via `run-project-team` | multi-workstream |
 
-### Tier S — Small/Fast Agent (fast/mini/low-cost model)
-Renames, formatting/lint fixes, small localized bug fixes with an obvious cause, simple tests for existing behavior, straightforward validation rules, translations/comments/docs/config, simple CRUD following an existing pattern exactly, explaining a small code block, codebase search/reference collection, mechanical refactors.
-Constraints: usually 1–3 files; no schema change; no payment/authorization/tenant/security/concurrency/production-critical flow; no ambiguous business decision; no broad architecture change.
+**Risk overrides — always ≥ Tier L regardless of size:** payments/refunds/balances/financial records; authentication/authorization/roles/IDOR/tenant isolation; secrets, personal data, uploads, webhooks, SSRF; destructive or irreversible data changes; concurrency/idempotency/locks/races; production incidents; public API compatibility.
 
-### Tier M — Standard Engineering Agent (balanced coding/reasoning model)
-Normal features, multi-file bug fixes, new endpoint on existing architecture, service/action extraction, query optimization with known scope, low-to-medium-risk migrations, integration with an existing internal service, moderate refactors, feature tests across several layers.
-Typical scope: 3–12 files, one bounded module, clear business rules, limited database/API impact.
-
-### Tier L — Strong Reasoning Agent (strongest approved model)
-New module or cross-module architecture; unclear/conflicting business rules; complex database design; payment/financial/inventory/balance/order state machines; authentication, authorization, tenant isolation, security, privacy; race conditions, locking, idempotency, distributed workflows; high-impact performance problems; production incidents with uncertain root cause; legacy refactors with broad behavior risk; tasks touching more than ~12 files or several bounded contexts.
-
-### Tier XL — Lead + Specialist Team
-Only when the task spans architecture, database, security, performance, testing, and rollout; has multiple independent workstreams; is a risky production migration or critical release; root cause stays uncertain after initial investigation; or needs review by more than one specialist.
-Stand the team up with the `run-project-team` skill: `team-lead` per workstream (`cto` above them for multi-workstream projects), `team-frontend-developer`/`team-backend-developer` for implementation, `database-engineer` when persistence changes, `security-engineer` for trust-boundary changes, `team-tester` for regression coverage, `team-ui-ux-reviewer` for UI/UX/responsive/Lighthouse checks on frontend units, `reviewer` for final sign-off.
-
-## Risk overrides — always Tier L or XL regardless of code size
-Payments, refunds, balances, taxes, commissions, financial records; authentication, authorization, roles, permissions, IDOR, tenant isolation; secrets, personal data, uploads, webhooks, external URLs, SSRF; database deletion, destructive migration, backfill, irreversible change; concurrency, duplicate requests, idempotency, locks, races; production outage, data loss, security incident, unexplained corruption; public API contract or backward-compatibility risk.
-
-## Escalation and downgrade
-- Start at the lowest tier that appears safe; escalate immediately on new uncertainty, risk, or scope.
-- A small agent must stop and hand off at architecture decisions, sensitive flows, unclear business rules, or out-of-scope changes.
-- A strong agent should delegate mechanical subtasks to smaller agents; never keep a strong model active for formatting, searching, boilerplate, or repetitive edits.
-- Do not split a tiny task across multiple agents; coordination overhead must be justified.
-
-## Routing output
-Before substantial execution, internally determine: tier, primary agent, required specialist reviews, escalation triggers, and whether parallel delegation adds real value. Do not burden the user with routing details unless useful, requested, or high risk.
+Escalate immediately on new uncertainty, risk, or scope. Small agents stop and hand off at architecture, sensitive flows, or unclear business rules. Strong agents delegate mechanical subtasks to smaller agents. Never split a tiny task across multiple agents.

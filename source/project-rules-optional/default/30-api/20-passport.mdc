@@ -1,0 +1,14 @@
+---
+description: Implementing or modifying OAuth2 flows with Laravel Passport — grants, clients, scopes, token issuance
+globs: "routes/**/*.php,app/**/*.php,config/passport.php"
+alwaysApply: false
+---
+# Passport (OAuth2)
+- Choose the grant by use case: authorization code + PKCE for anything user-facing (SPA, mobile, third-party apps); client credentials for machine-to-machine. First-party simple API auth usually wants Sanctum, not Passport.
+- Never use the password grant or implicit grant for new work — both are deprecated by OAuth 2.1.
+- Design scopes as coarse, auditable permissions (`orders:read`, `orders:write`); register them centrally and enforce with `scope`/`scopes` middleware or `tokenCan()` on every protected route — issuing a scope is not enforcing it.
+- Public clients (SPA/mobile) get no secret and must use PKCE; confidential client secrets live in env/secret manager, hashed in DB (`Passport::hashClientSecrets()`), never in repos or frontend bundles.
+- Set explicit `tokensExpireIn`, `refreshTokensExpireIn`, `personalAccessTokensExpireIn` — the defaults are too long for most apps.
+- Rotate refresh tokens on use and revoke the old one; revoke both access and refresh tokens on logout, password change, or compromise.
+- Validate redirect URIs exactly; no wildcards or open redirects in client registration.
+- Prune revoked/expired tokens on schedule; keep `oauth_*` tables out of unbounded growth.

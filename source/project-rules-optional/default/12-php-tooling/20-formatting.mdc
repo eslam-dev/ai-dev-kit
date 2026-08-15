@@ -1,0 +1,13 @@
+---
+description: After editing PHP files, or when style/formatting questions arise
+globs: "**/*.php"
+alwaysApply: false
+---
+# Formatting
+- The committed formatter config is the single style authority: `pint.json`, `.php-cs-fixer.dist.php`/`.php-cs-fixer.php`, or `phpcs.xml`/`phpcs.xml.dist` — never apply personal or PSR defaults over it.
+- Run the formatter on changed files only (`vendor/bin/pint <paths>`, `php-cs-fixer fix <paths>`, `phpcbf <paths>`), preferring the project's composer script when one exists.
+- Never reformat unrelated files or whole directories — formatting noise buries the real diff and breaks blame.
+- Never hand-format: do not manually align, re-wrap, or re-indent code the formatter governs; write it plainly and let the tool normalize it.
+- Do not edit the formatter config, add rules, or add per-file ignore annotations to resolve a style complaint without explicit user approval.
+- If no formatter config exists, match the surrounding file's existing style exactly; do not introduce a formatter uninvited.
+- Formatting-only changes belong in their own commit when the project separates them; never mix mass reformatting into a functional change.

@@ -1,6 +1,6 @@
 ---
-description: Default stack and mandatory workflow when creating a new application from scratch
-alwaysApply: true
+description: Apply when the user asks to create, initialize, scaffold, start, or bootstrap a brand-new application or project from scratch
+alwaysApply: false
 ---
 # New Project Default Stack
 

@@ -1,0 +1,13 @@
+---
+description: Enqueuing scripts/styles, outputting user-facing strings, editing templates, or registering blocks/theme.json in WordPress
+globs: "**/*.php,theme.json,block.json"
+alwaysApply: false
+---
+# WordPress Frontend and Assets
+- Load JS/CSS only via `wp_enqueue_script`/`wp_enqueue_style` on the correct hook (`wp_enqueue_scripts`, `admin_enqueue_scripts`, `enqueue_block_editor_assets`); never print `<script>`/`<link>` tags directly.
+- Every handle is prefixed and versioned (plugin version or `filemtime` for cache busting); declare real dependency arrays (`array('jquery', 'wp-element')`) instead of relying on load order.
+- Pass server data to JS with `wp_localize_script`/`wp_add_inline_script`/`wp_interactivity_state` — never inline PHP inside JS files.
+- Every user-facing string is translatable with the project text domain: `__()`, `_e()`, `_x()`, `_n()`, and escaping variants (`esc_html__`, `esc_attr__`) when echoed. Text domain is a literal string, never a variable.
+- Respect the template hierarchy; themes override plugin templates via the documented lookup path, child themes override parents file-by-file — never modify a parent theme directly.
+- Register blocks with `register_block_type()` pointing at `block.json` (single source for name, attributes, assets, supports); no manual attribute/asset wiring that duplicates it.
+- In block themes, `theme.json` is the styling source of truth — palette, typography, spacing, block supports live there, not in ad-hoc CSS that fights the editor.

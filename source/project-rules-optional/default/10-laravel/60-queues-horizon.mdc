@@ -1,0 +1,15 @@
+---
+description: Creating or modifying queued jobs, queued listeners, queue configuration, or Horizon setup
+globs: "app/Jobs/**/*.php,app/Listeners/**/*.php,config/queue.php,config/horizon.php"
+alwaysApply: false
+---
+# Queues and Horizon
+- Every job must be idempotent and retry-safe: re-running after a partial failure must not duplicate side effects (payments, emails, external calls). Guard with unique keys, upserts, or state checks.
+- Dispatching inside a DB transaction: use `afterCommit()` / `$afterCommit = true`, or the job may run before the data exists.
+- Declare `$tries`, `$backoff` (prefer exponential array), and `$timeout` explicitly; `$timeout` must be less than the worker's `retry_after`.
+- Use `ShouldBeUnique` / `ShouldBeUniqueUntilProcessing` to deduplicate; set `uniqueId()` and `uniqueFor` deliberately.
+- Keep serialized payloads small: pass IDs and re-fetch in `handle()`; never serialize large models, collections, or closures. `SerializesModels` re-queries — job logic must tolerate changed or deleted records.
+- Implement `failed(Throwable $e)` for cleanup/alerting; monitor and prune `failed_jobs`.
+- Name queues by domain and priority (e.g. `notifications`, `billing-high`); assign each to a Horizon supervisor with explicit `balance`, `processes`/`maxProcesses`, and `timeout` matching job settings.
+- Never assume ordering between queues, workers, or retried jobs; enforce sequence with job chains or batches, not dispatch order.
+- Route time-sensitive work away from long-running queues; watch Horizon wait-time thresholds.

@@ -1,0 +1,14 @@
+---
+description: Writing or reviewing Livewire components that expose properties, actions, uploads, or route parameters
+globs: "app/Livewire/**/*.php,app/Http/Livewire/**/*.php,resources/views/livewire/**/*.blade.php"
+alwaysApply: false
+---
+# Livewire Security
+- Treat every public property as client-writable: mark ids, foreign keys, prices, flags, and any server-owned state `#[Locked]`.
+- Treat every public method as a routable endpoint: authorize inside each action (`$this->authorize()`, Gate, policy) — visibility in the view is not protection.
+- Validate all bound input before use or persistence; never mass-assign raw public properties into models.
+- Never trust `mount()` arguments resolved from the route or query string — authorize the resolved resource and scope lookups to the authenticated user/tenant.
+- File uploads: use `WithFileUploads`, validate mimes/size/dimensions in rules, and expose previews only via `temporaryUrl()` — never raw temp paths.
+- Do not store secrets, tokens, or other users' data in public properties — they serialize into the page payload.
+- Re-check authorization in every action that mutates state, not only in `mount()` — component state outlives the initial request.
+- Rate-limit expensive or abusable actions (login, search, messaging) with the framework rate limiter.

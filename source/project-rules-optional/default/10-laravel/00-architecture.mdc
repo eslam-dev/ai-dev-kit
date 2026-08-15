@@ -1,6 +1,6 @@
 ---
 description: Laravel architecture and responsibility boundaries
-globs: "**/*.php"
+globs: "app/**/*.php,routes/**/*.php,database/**/*.php"
 alwaysApply: false
 ---
 # Laravel Architecture

@@ -1,0 +1,15 @@
+---
+description: Creating, structuring, or refactoring Livewire components and their Blade views
+globs: "app/Livewire/**/*.php,app/Http/Livewire/**/*.php,resources/views/livewire/**/*.blade.php"
+alwaysApply: false
+---
+# Livewire Architecture
+- Keep components thin: orchestrate only; delegate business logic to the project's actions/services layer.
+- One concern per component — split when a component owns multiple independent states, workflows, or modals.
+- Choose the `wire:model` binding mode deliberately: plain (deferred) by default; `.live` only when the server must react per input, always debounced; `.blur` for validate-on-exit fields.
+- Every loop rendering Livewire-managed DOM requires a stable `wire:key` — model key or unique value, never the loop index.
+- Communicate via dispatched events and listeners; do not reach into child component state or build deep parent-child prop chains.
+- Use Form Objects for non-trivial forms; keep rules, state, and reset logic off the component class.
+- `mount()` receives dependencies and initializes state — it must not contain business workflows.
+- Prefer computed properties over duplicating derived state into public properties.
+- Extract shared behavior into traits or the service layer, not copy-pasted component methods.

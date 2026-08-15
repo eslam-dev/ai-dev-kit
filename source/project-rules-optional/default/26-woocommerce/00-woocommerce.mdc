@@ -1,0 +1,13 @@
+---
+description: Working with WooCommerce orders, products, payments, templates, or pricing logic in PHP
+globs: "**/*.php"
+alwaysApply: false
+---
+# WooCommerce
+- Orders are HPOS: access only via `wc_get_order()` and CRUD getters/setters (`$order->get_total()`, `$order->update_meta_data()` + `$order->save()`). Never `get_post_meta`/`update_post_meta` on order IDs, never query `wp_posts`/`wp_postmeta` for orders — it breaks with HPOS tables.
+- Declare HPOS compatibility via `FeaturesUtil::declare_compatibility('custom_order_tables', ...)` in new plugins.
+- Change order status only through the state machine: `$order->update_status()` with a valid transition and a note; hook `woocommerce_order_status_changed` for side effects. Never write the status column/meta directly or skip transition hooks.
+- Payment gateways extend `WC_Payment_Gateway`: implement `process_payment()` returning `result`/`redirect`, `init_form_fields()` for settings, webhooks verify signatures, refunds via `process_refund()`. Register on `woocommerce_payment_gateways`.
+- Prefer hooks (`woocommerce_before_*`/`woocommerce_after_*` actions, price/label filters) over template overrides. When a template must be overridden, copy it exactly at the documented path, keep the `@version` header, and diff it against each WooCommerce release.
+- Money is never a float: compute with `wc_add_number_precision`/`wc_remove_number_precision` or integer minor units; format with `wc_price()`; round with `wc_format_decimal`/`round( , wc_get_price_decimals())`. Totals go through `WC_Order::calculate_totals()`, not manual sums.
+- Product data via `wc_get_product()` CRUD, product queries via `wc_get_products()`/`WC_Product_Query`, not raw `WP_Query` on post types.

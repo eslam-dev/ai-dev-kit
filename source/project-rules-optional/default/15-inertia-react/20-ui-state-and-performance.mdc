@@ -1,6 +1,6 @@
 ---
 description: Inertia page props, client state, rendering, and frontend performance
-globs: "resources/js/**/*.{ts,tsx},app/Http/**/*.php"
+globs: "resources/js/**/*.{ts,tsx}"
 alwaysApply: false
 ---
 # UI State and Performance

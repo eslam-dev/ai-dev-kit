@@ -1,0 +1,14 @@
+---
+description: Building or changing API authentication with Laravel Sanctum — API routes, token issuance, SPA auth, sanctum config
+globs: "routes/api.php,app/Http/**/*.php,config/sanctum.php"
+alwaysApply: false
+---
+# Sanctum
+- Pick one mode per client and keep it: SPA cookie mode (stateful, same-domain) or API token mode (mobile/third-party). Never mix session and token auth ad hoc on the same routes.
+- Every protected route group gets `auth:sanctum`; no protected endpoint may rely on implicit session state.
+- SPA mode: list exact frontend origins in `stateful` config, hit `/sanctum/csrf-cookie` before login, send the CSRF token on every mutating request. CSRF protection is mandatory, not optional.
+- Token mode: issue tokens with the narrowest ability set (`createToken($name, [...])`, never `['*']` by default) and check abilities server-side with `tokenCan()` or `abilities`/`ability` middleware — abilities are not enforced automatically.
+- Set `expiration` in config or per-token `expiresAt`; long-lived non-expiring tokens require explicit justification. Schedule `sanctum:prune-expired`.
+- Rotate: revoke and reissue tokens on password change, privilege change, or suspected compromise; delete the current token on logout, not all of the user's devices unless intended.
+- Name tokens per device/purpose so revocation is targeted.
+- Never log or return plaintext tokens after initial issuance; transmit only over HTTPS.

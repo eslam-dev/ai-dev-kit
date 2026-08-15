@@ -1,6 +1,6 @@
 ---
 description: Blade view rendering and query performance
-globs: "resources/views/**/*.blade.php,app/Http/**/*.php"
+globs: "resources/views/**/*.blade.php"
 alwaysApply: false
 ---
 # Blade View Performance

@@ -1,6 +1,6 @@
 ---
 description: Inertia React TypeScript architecture and server-driven application rules
-globs: "resources/js/**/*.{ts,tsx},app/Http/**/*.php,routes/**/*.php"
+globs: "resources/js/**/*.{ts,tsx}"
 alwaysApply: false
 ---
 # Inertia + React Architecture

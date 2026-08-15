@@ -1,0 +1,13 @@
+---
+description: Creating or modifying Filament Resources, Pages, Widgets, or RelationManagers
+globs: "app/Filament/**/*.php"
+alwaysApply: false
+---
+# Filament Resources
+- Detect the installed Filament major version from composer.lock/composer.json before writing code; use only that version's API and never mix (v3 `Forms\Components` + `->form()` vs v4 unified `Schemas`, `Filament\Actions`, `->schema()`).
+- Match the structure, base classes, naming, and namespace layout of existing Resources in the project before inventing new patterns.
+- Define forms, tables, and infolists in dedicated static schema methods (`form()`, `table()`, `infolist()`); extract shared field groups into reusable schema classes instead of duplicating.
+- Keep Resource Pages thin — registration and page-level hooks only; behavior belongs in schemas, actions, or the domain layer.
+- RelationManagers own their relation's table/form; do not re-declare parent-record fields.
+- Name actions explicitly (`Action::make('approve')`), group row actions with `ActionGroup`, keep bulk actions in `BulkActionGroup`, and reuse action classes shared between Resources and RelationManagers.
+- Widgets declare explicit `$sort` and column spans; assemble data in query methods, not the view.

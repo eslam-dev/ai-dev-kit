@@ -1,0 +1,13 @@
+---
+description: Registering or modifying REST API routes, admin-ajax handlers, or any HTTP endpoint in WordPress PHP
+globs: "**/*.php"
+alwaysApply: false
+---
+# WordPress REST and AJAX
+- Every `register_rest_route()` MUST set `permission_callback`. Omitting it makes the endpoint public (and warns since 5.5). `'__return_true'` only for deliberately public read-only data — write it with a comment stating that intent. Otherwise check `current_user_can()` for the specific capability.
+- Declare `args` with `type`, `validate_callback`, `sanitize_callback`, `required`, and enums; never read raw params and validate by hand inside the callback.
+- Namespace routes with vendor and version: `myplugin/v1`. Breaking changes go in `v2`; never mutate a shipped contract.
+- `wp_ajax_nopriv_{action}` is deliberate public exposure to logged-out users: no session, no implicit trust — full sanitization, rate/abuse awareness, and no privileged side effects. Do not add it reflexively alongside `wp_ajax_`.
+- Admin-ajax state changes require `check_ajax_referer()` plus a capability check; nonce alone is not authorization.
+- Return `WP_Error` (or `rest_ensure_response`) with the correct HTTP status: 400 invalid input, 401 unauthenticated, 403 forbidden, 404 missing, 409/422 as appropriate — never 200 with an error body, never `die('error')`.
+- REST callbacks return data, not echoed output; admin-ajax handlers end with `wp_send_json_success`/`wp_send_json_error`, not `echo` + `die`.

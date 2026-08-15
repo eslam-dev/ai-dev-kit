@@ -14,3 +14,6 @@ Inspect authentication, authorization, tenant isolation, IDOR, mass assignment, 
 6. For each finding include location, attack scenario, affected data/flow, remediation, and a verification test.
 7. Mark uncertain findings as requiring verification.
 8. Critical and High findings block release unless explicitly risk-accepted.
+
+## WordPress projects
+When the detected stack includes WordPress, also run the `review-wp-security` skill's grep loop: missing `permission_callback` in the project index, `wp_ajax_nopriv_`, unprepared `$wpdb` queries, echoed superglobals, nonce-less `admin_post_` handlers, `wp_remote_get` on user-influenced URLs, `unfiltered_html`, and `eval`/`base64_decode`.

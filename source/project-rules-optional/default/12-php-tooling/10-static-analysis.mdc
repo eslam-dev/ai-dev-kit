@@ -1,0 +1,13 @@
+---
+description: When PHPStan/Psalm errors appear, or when writing PHP in a project with a static analysis config
+globs: "**/*.php,phpstan.neon,phpstan.neon.dist,phpstan.dist.neon,psalm.xml"
+alwaysApply: false
+---
+# Static Analysis
+- Respect the configured level/errorLevel and ruleset exactly as committed; never lower the level, disable rules, or add path exclusions to make an error disappear.
+- The baseline is a debt ledger, not a mute button: never regenerate or grow it to silence an error in code you are writing or touching. New code must pass clean at the configured level.
+- Fix errors at the source — real types, narrowed unions, corrected signatures, `assert()`/guard clauses — not with `@phpstan-ignore`, `@psalm-suppress`, or `@var` lies.
+- An inline ignore is acceptable only for a verified analyser false positive, with a one-line reason comment and (for PHPStan) a specific identifier, never a bare ignore.
+- Use generics annotations (`@template`, `@param class-string<T>`, array shapes) rather than loosening to `mixed`/`array`.
+- When touching baselined code, fix the baselined errors in the lines you change and remove them from the baseline.
+- Run the analyser via the project's composer script before completion; treat new errors in files you touched as your responsibility even if pre-existing lines triggered them.

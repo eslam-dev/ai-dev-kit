@@ -1,0 +1,14 @@
+---
+description: Creating or modifying any WordPress plugin, theme, or mu-plugin PHP — functions, hooks, options, lifecycle, or file layout
+globs: "**/*.php"
+alwaysApply: false
+---
+# WordPress Architecture
+- Prefix every function, class, option, transient, hook name, and global with the project prefix; the global namespace is shared with every other plugin and theme.
+- Extend via hooks (`add_action`/`add_filter`); never edit core, other plugins, other themes, or `wp-config.php`.
+- Respect load order: register hooks at file load, integrate with other plugins on `plugins_loaded`, register CPTs/taxonomies/rewrites on `init`, theme supports on `after_setup_theme`. Do not call functions before the API they need exists.
+- Handle the full lifecycle: `register_activation_hook` (schema, rewrites via `flush_rewrite_rules`, defaults), `register_deactivation_hook` (scheduled events, transient state), `uninstall.php` or uninstall hook (options, tables, cron — full cleanup).
+- Template files render only; business logic, queries, and side effects live in plugin/theme classes or functions the template calls.
+- Guard direct file access (`defined('ABSPATH') || exit`) in every PHP file.
+- One responsibility per file; autoload or require deterministically — never rely on include-order side effects.
+- Cron via `wp_schedule_event` with a prefixed hook; check the event is not already scheduled before adding.

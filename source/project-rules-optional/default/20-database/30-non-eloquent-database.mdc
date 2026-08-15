@@ -1,0 +1,13 @@
+---
+description: Database access outside Eloquent — PDO, Doctrine ORM/DBAL, raw SQL, or migration files
+globs: "src/**/*.php,**/*.sql"
+alwaysApply: false
+---
+# Non-Eloquent Database Access
+- Parameterize every query: PDO `prepare()` with bound parameters, Doctrine DQL/QueryBuilder `setParameter()`. Never concatenate or interpolate any runtime value into SQL — including "safe" IDs, `IN (...)` lists (bind each item or use `Connection::PARAM_*_ARRAY`), and ORDER BY/identifier values (allowlist those; they cannot be bound).
+- Doctrine N+1: fetch relations the result set will traverse via join + `addSelect()` in DQL/QueryBuilder; never rely on lazy proxies inside loops. For large result sets use `toIterable()` with periodic `clear()`.
+- Aggregate in the database (COUNT/SUM/EXISTS via DQL or DBAL), not by hydrating entities to count them; select scalar/partial results when full entities are not needed.
+- Migrations must be reversible: implement a real `down()`; pair destructive changes with a data-preserving path or explicit user approval.
+- Wrap multi-statement write workflows in a transaction (`Connection::transactional()` or explicit begin/commit/rollback); keep transactions short and never call external services inside them.
+- Flush deliberately: batch writes, one `flush()` per unit of work — not per entity in a loop.
+- Verify indexes exist for new WHERE/JOIN/ORDER BY columns introduced by queries or migrations.

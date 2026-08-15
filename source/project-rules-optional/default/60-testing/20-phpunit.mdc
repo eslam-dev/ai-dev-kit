@@ -1,0 +1,14 @@
+---
+description: Writing or modifying tests in a project using PHPUnit test classes
+globs: "tests/**/*.php"
+alwaysApply: false
+---
+# PHPUnit
+- Follow PHPUnit conventions: test classes extend the project's base `TestCase`, methods named `test_snake_case` or `testCamelCase` — match the existing suite, never mix.
+- On PHPUnit 10+, use attributes (`#[Test]`, `#[DataProvider]`, `#[Group]`, `#[Depends]`, `#[CoversClass]`) — never doc-comment annotations.
+- Use data providers for case matrices instead of duplicated test methods; providers are `public static`, return named keys for readable failures.
+- Do not mix Pest-style closures (`it()`, `test()`, `expect()`) into a PHPUnit suite.
+- Assert the most specific thing: `assertSame` over `assertEquals`, `assertCount` over counting manually, `assertInstanceOf` over `assertTrue(... instanceof ...)`; avoid bare `assertTrue`/`assertNotNull` when a precise assertion exists.
+- Use `setUp()`/`tearDown()` for per-test state; call `parent::setUp()` first. Avoid static/shared state between tests.
+- Expect exceptions with `expectException()`/`expectExceptionMessage()` before the act step — never try/catch with a manual fail.
+- One behavior per test method; use `#[Group]` for slow/external suites so CI can filter them.

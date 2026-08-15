@@ -1,0 +1,14 @@
+---
+description: Authorization, record visibility, or tenant scoping in Filament panels
+globs: "app/Filament/**/*.php"
+alwaysApply: false
+---
+# Filament Authorization and Tenancy
+- Policies are the single source of truth: they drive resource visibility, page access, and every action — register them; never substitute ad-hoc `visible()` role checks.
+- `getEloquentQuery()` is the tenancy/IDOR boundary: in multi-tenant apps always scope it to the tenant/team/owner; an unscoped resource query exposes every tenant's records via URL id.
+- All record resolution — edit/view pages, `Select::relationship()` options, global search, exports — must flow through the scoped query; never raw `Model::find()`.
+- Bulk actions and RelationManager actions re-check the policy per record inside `action()`; a selected checkbox is not authorization.
+- Hiding navigation (`shouldRegisterNavigation`, `->hidden()`) is UX, not authorization — routes and actions still exist and must be policy-guarded.
+- Widgets, stats overviews, charts, and dashboard queries must apply the same tenant scope as the resource query.
+- Never trust tenant/owner ids from form state; assign them server-side from the authenticated context.
+- Tests must cover cross-tenant record access by direct URL and per-record bulk authorization.

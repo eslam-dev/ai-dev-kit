@@ -1,0 +1,9 @@
+# Uncomment after installing larastan/larastan:
+# includes:
+#     - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 6
+    paths:
+        - app
+        - tests

@@ -1,0 +1,15 @@
+---
+description: Wiring services, adding class dependencies, or structuring application/domain layers
+globs: "src/**/*.php,app/**/*.php"
+alwaysApply: false
+---
+# Dependency Injection
+- Inject every dependency through the constructor; use promoted `private readonly` parameters.
+- No service location: never pull dependencies from a container, registry, singleton, or global inside business code.
+- No static mutable state; static methods only for pure functions. No `global`, no shared mutable class properties.
+- Depend on interfaces at module/package boundaries and for anything swapped in tests (clock, filesystem, HTTP clients, mailers); concrete classes are fine within a module.
+- Keep classes small, `final`, and single-purpose; a constructor demanding many collaborators signals the class needs splitting.
+- Follow the framework's container conventions: Symfony autowiring/autoconfiguration in `services.yaml` (bind interfaces to implementations there), Laravel bindings in service providers — never wire manually what the container resolves automatically.
+- Configuration values (API keys, flags, URLs) enter via constructor parameters bound in container config — never read env/config inside services.
+- Side effects do not belong in constructors: no queries, I/O, or work at construction time.
+- Circular dependencies are a design error — break them by extracting the shared concern, not with setter injection or lazy proxies.

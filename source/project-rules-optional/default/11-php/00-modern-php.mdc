@@ -1,0 +1,17 @@
+---
+description: Writing or editing any PHP file — language features, strictness, and modern idioms
+globs: "**/*.php"
+alwaysApply: false
+---
+# Modern PHP
+- Start every new file with `declare(strict_types=1);` if the project already does so; do not add it to legacy files with untyped call sites without verifying callers.
+- Check `composer.json` `require.php` before using a language feature — never introduce syntax newer than the declared constraint.
+- Use constructor property promotion; mark properties `readonly` when never reassigned after construction.
+- Prefer backed `enum` over class constants for closed sets of values.
+- Prefer `match` over `switch` when returning a value or branching on strict equality; keep `switch` for fall-through logic.
+- Throw typed exceptions instead of returning `false`/`null`/error arrays; reserve nullable returns for genuine "not found" semantics.
+- Declare parameter, return, and property types everywhere; use union/intersection types over docblock-only typing.
+- Make service classes `final` by default; open for extension only with a deliberate interface or abstract.
+- Use named arguments for calls with long or boolean-heavy signatures.
+- Use first-class callable syntax `$this->handle(...)` over `[$this, 'handle']` and string callables.
+- Follow PSR-12; one class per file, filename matches class name.

@@ -1,0 +1,13 @@
+---
+description: Building or optimizing Filament tables, infolists, widgets, or selects that query the database
+globs: "app/Filament/**/*.php"
+alwaysApply: false
+---
+# Filament Performance
+- Eager-load every relationship a table column, infolist entry, or action touches via `->modifyQueryUsing(fn ($q) => $q->with([...]))` or `with()` in `getEloquentQuery()`; dot-notation columns (`author.name`) lazy-load per row otherwise.
+- Use `->counts()`, `->exists()`, `->sum()` column shortcuts instead of accessors or closures that query per row.
+- Mark `searchable()`/`sortable()` only on indexed columns; searching computed or unindexed columns requires an index or dedicated search backend first.
+- Always paginate tables; never `->paginated(false)` on unbounded datasets; keep per-page options bounded.
+- Select only needed columns with `modifyQueryUsing` on wide tables — retain the primary/foreign keys relationships require.
+- Defer heavy work: `->deferLoading()` on tables, lazy widgets (`$isLazy = true`), sparing poll intervals, cache expensive stats queries.
+- `Select::relationship()` over large tables must be `searchable()` with a bounded `optionsLimit`, never fully hydrated.

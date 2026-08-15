@@ -5,51 +5,34 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 from pathlib import Path
 
-CATEGORIES = [
-    "00-core",
-    "05-project-bootstrap",
-    "10-laravel",
-    "15-inertia-react",
-    "16-blade",
-    "20-database",
-    "30-api",
-    "40-security",
-    "50-performance",
-    "60-testing",
-    "65-domain",
-    "70-workflows",
-    "75-review",
-    "90-project",
-]
-
 # Maps each unified category to the curated template folder it is seeded from
-# in project-rules-optional/default/. Categories not listed here have no curated
-# templates (65-domain is generated dynamically below; 70-workflows is a
-# reserved empty scaffold for future dynamic workflow rules).
+# in project-rules-optional/default/ (65-domain is generated dynamically below).
 CATEGORY_TEMPLATE_DIRS = {
     "00-core": "00-core",
     "05-project-bootstrap": "05-project-bootstrap",
     "10-laravel": "10-laravel",
+    "11-php": "11-php",
+    "12-php-tooling": "12-php-tooling",
     "15-inertia-react": "15-inertia-react",
     "16-blade": "16-blade",
+    "17-livewire": "17-livewire",
+    "18-filament": "18-filament",
     "20-database": "20-database",
+    "25-wordpress": "25-wordpress",
+    "26-woocommerce": "26-woocommerce",
     "30-api": "30-api",
     "40-security": "40-security",
     "50-performance": "50-performance",
     "60-testing": "60-testing",
     "75-review": "70-review",
-    "90-project": "80-project",
 }
 
-# Curated files that duplicate what BASE_RULES already generates below
-# (index-first workflow, rule maintenance) — skip them to avoid conflicting
-# duplicate rules in 00-core.
-TEMPLATE_EXCLUDES = {
-    "00-core/15-project-index-first.mdc",
-    "00-core/20-dynamic-rule-maintenance.mdc",
-}
+# Curated files that duplicate what BASE_RULES already generates below —
+# skip them to avoid conflicting duplicate rules in 00-core.
+TEMPLATE_EXCLUDES: set[str] = set()
 
 BASE_RULES = {
     "00-core/project-navigation.mdc": """---
@@ -58,15 +41,13 @@ alwaysApply: true
 ---
 # Project Navigation
 
-Always refresh and read `.ai/project-index/` before broad repository exploration.
+Run `ai-dev .` before broad repository exploration, then locate work tiered — stop as soon as it is located:
+1. `ai-dev query <symbol|route|file|domain|table|hook|env> <term>` — exact lookups in a few lines (`query map` = stack + domains, `query changed` = files changed since the last index run).
+2. `.ai/project-index/PROJECT_MAP.md` — stack, domains, entry points, key files.
+3. The one relevant `DOMAINS/<domain>.md`.
+4. Grep a single line from `SYMBOLS.jsonl` when query is not enough — never read it whole.
 
-Read:
-- `PROJECT_MAP.md`
-- `ROUTES.md`
-- `RELATIONS.md`
-- the relevant domain map
-
-Open only the smallest relevant source set. Verify sensitive logic directly.
+`ROUTES.md`, `SCHEMA.md`, `FRAMEWORK.md`, `HOOKS.md`, `RELATIONS.md`, and `FILES.md` are on-demand only. Open only the smallest relevant source set; verify security/payments/authorization/migrations directly in source; re-run `ai-dev .` after changes.
 """,
     "00-core/rule-maintenance.mdc": """---
 description: Keep project-specific rules synchronized after meaningful code changes
@@ -98,20 +79,40 @@ def sha256(text: str) -> str:
 def normalize(text: str) -> str:
     return text.rstrip() + "\n"
 
-def load_seed_manifest(rules: Path) -> dict[str, str]:
+def kit_version() -> str:
+    # bin/../VERSION resolves in both layouts: repo checkout and ~/.local/share/ai-dev-kit.
+    try:
+        return (Path(__file__).resolve().parent.parent / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        return "unknown"
+
+def load_seed_manifest(rules: Path) -> dict:
+    """Schema 2: {"schema": 2, "kit_version": str|None, "rules": {rel: sha256}}.
+
+    A 1.3.0-era flat {rel: sha256} map is migrated transparently.
+    """
     path = rules / SEED_MANIFEST
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and isinstance(data.get("rules"), dict):
+                data["rules"] = {str(k): str(v) for k, v in data["rules"].items()}
+                return data
             if isinstance(data, dict):
-                return {str(k): str(v) for k, v in data.items()}
+                return {"schema": 2, "kit_version": None,
+                        "rules": {str(k): str(v) for k, v in data.items()}}
         except Exception:
             pass
-    return {}
+    return {"schema": 2, "kit_version": None, "rules": {}}
 
-def save_seed_manifest(rules: Path, manifest: dict[str, str]) -> None:
+def save_seed_manifest(rules: Path, manifest: dict) -> None:
+    manifest["schema"] = 2
+    manifest["kit_version"] = kit_version()
     path = rules / SEED_MANIFEST
-    path.write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    content = json.dumps(manifest, indent=1, sort_keys=True) + "\n"
+    if path.exists() and path.read_text(encoding="utf-8") == content:
+        return
+    path.write_text(content, encoding="utf-8")
 
 def find_template_root() -> Path | None:
     script_dir = Path(__file__).resolve().parent
@@ -124,22 +125,81 @@ def find_template_root() -> Path | None:
             return candidate
     return None
 
-def template_map(root: Path) -> dict[str, str]:
+def get_stack(root: Path, index: Path) -> dict:
+    """Stack facts from the single detector in ai-dev-project-index.
+
+    Priority: manifest.json["stack"] (fresh — the pipeline runs the indexer
+    right before this script) → `ai-dev-project-index --print-stack` → minimal
+    filesystem probes.
+    """
+    manifest = index / "manifest.json"
+    if manifest.exists():
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            if isinstance(data.get("stack"), dict):
+                return data["stack"]
+        except Exception:
+            pass
+    indexer = Path(__file__).resolve().parent / "ai-dev-project-index"
+    if indexer.exists():
+        try:
+            proc = subprocess.run(
+                ["python3", str(indexer), str(root), "--print-stack"],
+                capture_output=True, text=True, timeout=60,
+            )
+            if proc.returncode == 0:
+                data = json.loads(proc.stdout)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    laravel = (root / "artisan").exists()
+    return {
+        "laravel": laravel, "livewire": False, "filament": False,
+        "inertia": (root / "resources/js").is_dir(), "blade": (root / "resources/views").is_dir(),
+        "sanctum": False, "passport": False, "tenancy": False, "symfony": False,
+        "composer": (root / "composer.json").exists(), "wordpress": None,
+        "testing": "none", "static_analysis": "none", "formatter": "none",
+        "new_project": not laravel and not (root / "composer.json").exists(),
+    }
+
+
+def template_map(root: Path, stack: dict) -> dict[str, str]:
     """All template files that apply to this project: {dest relpath under .cursor/rules: content}."""
     result = dict(BASE_RULES)
     template_root = find_template_root()
     if template_root is None:
         return result
 
-    has_laravel = (root / "artisan").exists()
-    has_frontend = (root / "resources/js").exists()
-    has_blade = (root / "resources/views").exists()
+    wp = stack.get("wordpress") or {}
     gates = {
-        "10-laravel": has_laravel,
-        "20-database": has_laravel,
-        "50-performance": has_laravel,
-        "15-inertia-react": has_frontend,
-        "16-blade": has_blade,
+        "05-project-bootstrap": stack.get("new_project") or stack.get("laravel"),
+        "10-laravel": stack.get("laravel"),
+        "11-php": stack.get("composer"),
+        "12-php-tooling": stack.get("composer"),
+        "15-inertia-react": stack.get("inertia"),
+        "16-blade": stack.get("blade") and stack.get("laravel"),
+        "17-livewire": stack.get("livewire"),
+        "18-filament": stack.get("filament"),
+        "20-database": stack.get("composer") or stack.get("laravel"),
+        "25-wordpress": bool(wp),
+        "26-woocommerce": bool(wp.get("woocommerce")),
+        "30-api": stack.get("laravel"),
+        "50-performance": stack.get("laravel"),
+    }
+    # Per-file gates for variants living inside broader categories.
+    file_gates = {
+        "10-laravel/70-multi-tenancy.mdc": bool(stack.get("tenancy")),
+        "30-api/10-sanctum.mdc": bool(stack.get("sanctum")),
+        "30-api/20-passport.mdc": bool(stack.get("passport")),
+        "12-php-tooling/10-static-analysis.mdc": stack.get("static_analysis", "none") != "none",
+        "12-php-tooling/20-formatting.mdc": stack.get("formatter", "none") != "none",
+        "20-database/00-query-performance.mdc": bool(stack.get("laravel")),
+        "20-database/10-transactions-concurrency.mdc": bool(stack.get("laravel")),
+        "20-database/20-migrations.mdc": bool(stack.get("laravel")),
+        "20-database/30-non-eloquent-database.mdc": bool(stack.get("composer")) and not stack.get("laravel"),
+        "60-testing/10-pest.mdc": stack.get("testing") == "pest",
+        "60-testing/20-phpunit.mdc": stack.get("testing") == "phpunit",
     }
 
     for category, template_dir in CATEGORY_TEMPLATE_DIRS.items():
@@ -151,46 +211,73 @@ def template_map(root: Path) -> dict[str, str]:
         for src_file in sorted(src_dir.glob("*.mdc")):
             if f"{template_dir}/{src_file.name}" in TEMPLATE_EXCLUDES:
                 continue
-            result[f"{category}/{src_file.name}"] = src_file.read_text(encoding="utf-8")
+            rel = f"{category}/{src_file.name}"
+            if not file_gates.get(rel, True):
+                continue
+            result[rel] = src_file.read_text(encoding="utf-8")
     return result
 
-def sync_templates(rules: Path, root: Path, update: bool, force: bool):
+def sync_templates(rules: Path, root: Path, stack: dict, update: bool, force: bool):
     """Seed missing templates; with update=True also refresh unmodified seeded copies.
 
     A project copy is only overwritten when its content still matches the hash
     recorded at seed time (i.e. the project never edited it), or with force=True.
-    Locally modified copies are reported and left alone.
+    Locally modified copies are reported and left alone. Under update, seeded
+    rules retired from the kit (or whose stack gate flipped off) are pruned
+    when still pristine.
     """
     manifest = load_seed_manifest(rules)
+    tracked = manifest["rules"]
     seeded = updated = 0
     skipped: list[str] = []
+    pruned: list[str] = []
+    mapping = template_map(root, stack)
 
-    for rel, raw in template_map(root).items():
+    for rel, raw in mapping.items():
         content = normalize(raw)
         dest = rules / rel
         if not dest.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(content, encoding="utf-8")
-            manifest[rel] = sha256(content)
+            tracked[rel] = sha256(content)
             seeded += 1
             continue
 
         current = dest.read_text(encoding="utf-8")
         if current == content:
-            manifest.setdefault(rel, sha256(content))
+            tracked.setdefault(rel, sha256(content))
             continue
         if not update:
             continue
         # Unmodified since seeding (hash matches what we wrote) → safe to refresh.
-        if force or manifest.get(rel) == sha256(current):
+        if force or tracked.get(rel) == sha256(current):
             dest.write_text(content, encoding="utf-8")
-            manifest[rel] = sha256(content)
+            tracked[rel] = sha256(content)
             updated += 1
         else:
             skipped.append(rel)
 
+    # Guard on the template root: if it is missing, mapping only contains
+    # BASE_RULES and pruning would mass-delete every curated rule.
+    if update and find_template_root() is not None:
+        for rel in sorted(set(tracked) - set(mapping)):
+            dest = rules / rel
+            if not dest.exists():
+                del tracked[rel]
+                continue
+            if force or sha256(dest.read_text(encoding="utf-8")) == tracked[rel]:
+                dest.unlink()
+                del tracked[rel]
+                pruned.append(rel)
+                parent = dest.parent
+                while parent != rules and parent.exists() and not any(parent.iterdir()):
+                    parent.rmdir()
+                    parent = parent.parent
+            else:
+                skipped.append(rel)
+
     save_seed_manifest(rules, manifest)
-    return seeded, updated, skipped
+    return seeded, updated, skipped, pruned
 
 def project_domains(index: Path) -> set[str]:
     domains: set[str] = set()
@@ -227,10 +314,10 @@ def main() -> None:
     rules = root / ".cursor/rules"
     index = root / ".ai/project-index"
 
-    for category in CATEGORIES:
-        (rules / category).mkdir(parents=True, exist_ok=True)
+    rules.mkdir(parents=True, exist_ok=True)
 
-    seeded, updated, skipped = sync_templates(rules, root, args.update, args.force)
+    stack = get_stack(root, index)
+    seeded, updated, skipped, pruned = sync_templates(rules, root, stack, args.update, args.force)
 
     domains = project_domains(index)
     for domain in sorted(domains):
@@ -238,6 +325,8 @@ def main() -> None:
         domain_dir = rules / "65-domain" / safe
         domain_dir.mkdir(parents=True, exist_ok=True)
 
+        # Same sanitization the indexer applies to DOMAINS/*.md filenames.
+        domain_file = re.sub(r"[^A-Za-z0-9._-]+", "-", domain)
         domain_rule = domain_dir / "overview.mdc"
         if not domain_rule.exists():
             domain_rule.write_text(
@@ -247,7 +336,7 @@ alwaysApply: false
 ---
 # {domain} Domain
 
-Use `.ai/project-index/DOMAINS/{domain}.md` or the closest generated domain map as the navigation source.
+Use `.ai/project-index/DOMAINS/{domain_file}.md` or the closest generated domain map as the navigation source.
 
 Maintain this rule with durable:
 - domain boundaries;
@@ -262,10 +351,12 @@ Do not turn this file into a complete file inventory.
             )
 
     print(f"Project rules initialized: {rules}")
-    line = f"Categories: {len(CATEGORIES)} | seeded: {seeded} | domains: {len(domains)}"
+    line = f"Seeded: {seeded} | domains: {len(domains)}"
     if args.update:
-        line += f" | updated: {updated} | kept (locally modified): {len(skipped)}"
+        line += f" | updated: {updated} | pruned: {len(pruned)} | kept (locally modified): {len(skipped)}"
     print(line)
+    for rel in pruned:
+        print(f"  pruned: {rel} (retired from the kit)")
     for rel in skipped:
         print(f"  kept: {rel} (locally modified — rerun with --force to overwrite)")
 

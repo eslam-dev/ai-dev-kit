@@ -1,0 +1,13 @@
+---
+description: Writing WP_Query/meta/option/transient code, adding caching, or choosing data storage in WordPress PHP
+globs: "**/*.php"
+alwaysApply: false
+---
+# WordPress Data and Performance
+- Never `posts_per_page => -1` (or `numberposts => -1`) on data that grows; paginate or bound explicitly. Set `no_found_rows => true` when pagination counts are unused; disable `update_post_meta_cache`/`update_post_term_cache` when meta/terms are unused.
+- `meta_query` and `tax_query` scale badly: postmeta joins on unindexed longtext values. Keep them shallow, avoid `LIKE`/`NOT EXISTS` on large sets, and prefer taxonomy terms over meta for filterable flags.
+- Cache expensive work in transients or `wp_cache_*` with explicit invalidation on the write path (`save_post`, option update, import) — never rely on expiry alone for correctness.
+- Autoloaded options load on every request: keep them small, set `autoload => false` for large or rarely read options, never stuff arrays of unbounded data into one option.
+- Storage choice follows query patterns: entity queried/sorted/joined by its own columns at scale → custom table with indexes; loosely attached attributes of posts → postmeta. Decide before data accumulates.
+- Prefer `WP_Query`/`get_posts`/core APIs over raw SQL — they hit object caches and fire the hooks other code depends on; drop to `$wpdb` only for queries WP_Query cannot express.
+- No queries in loops: N+1 applies to WP. Prime caches up front (`update_meta_cache`, `_prime_post_caches`, `WP_Query` with `post__in`) instead of `get_post_meta`/`get_post` per iteration.

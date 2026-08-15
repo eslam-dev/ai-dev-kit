@@ -6,72 +6,157 @@ import hashlib
 import json
 import os
 import re
+import subprocess
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.2.0"
+VERSION = "1.4.0"
+
+# Root-anchored ignores (path prefixes from the project root).
 IGNORE_PREFIXES = (
-    ".git/", ".idea/", ".vscode/", "vendor/", "node_modules/", "storage/",
-    "bootstrap/cache/", "public/build/", "dist/", "build/", "coverage/",
-    ".next/", ".nuxt/", ".cache/", ".ai/project-index/",
+    ".git/", ".idea/", ".vscode/", "storage/",
+    "bootstrap/cache/", "public/build/", "coverage/",
+    ".cache/", ".ai/project-index/",
     # WordPress core (vendored like any other framework core, not the project's own code),
     # the WooCommerce core plugin (third-party, thousands of files), and generated/
     # user-uploaded content.
     "wp-admin/", "wp-includes/", "wp-content/uploads/", "wp-content/cache/", "wp-content/upgrade/",
     "wp-content/plugins/woocommerce/",
 )
+# Directory names ignored at ANY depth (monorepos, plugin repos with committed
+# vendor/, nested build output).
+IGNORE_ANYWHERE = {
+    "vendor", "node_modules", ".git", "dist", "build", ".next", ".nuxt", "coverage",
+}
 SOURCE_SUFFIXES = {
-    ".php", ".js", ".jsx", ".ts", ".tsx", ".vue", ".py", ".go", ".java",
+    ".php", ".js", ".jsx", ".ts", ".tsx", ".vue", ".twig", ".py", ".go", ".java",
     ".kt", ".rb", ".rs", ".cs", ".sql", ".graphql", ".gql",
 }
 SPECIAL_FILES = {
     "composer.json", "package.json", "vite.config.js", "vite.config.ts",
     "phpunit.xml", "phpunit.xml.dist", "artisan",
+    "phpstan.neon", "phpstan.neon.dist", "phpstan.dist.neon", "psalm.xml",
+    "pint.json", ".php-cs-fixer.dist.php", ".php-cs-fixer.php", "rector.php",
+    "symfony.lock", "wp-config.php", "uninstall.php", "theme.json", "block.json",
 }
+MAX_PARSE_BYTES = 1024 * 1024
+
 PHP_DECL = re.compile(
     r"(?m)^\s*(?:final\s+|abstract\s+|readonly\s+)?"
     r"(?:(?P<kind>class|interface|trait|enum)\s+(?P<type>[A-Za-z_][A-Za-z0-9_]*)"
-    r"|(?:(?:public|protected|private|static|final|abstract|readonly)\s+)*"
+    r"|(?P<prefix>(?:(?:public|protected|private|static|final|abstract|readonly)\s+)*)"
     r"function\s+(?P<func>[A-Za-z_][A-Za-z0-9_]*)\s*\()"
 )
+PHP_ATTR = re.compile(
+    r"(?m)^\s*#\[(?:Livewire\\Attributes\\|Filament\\|Symfony\\[\w\\]*\\)?"
+    r"(?P<name>Computed|Locked|On|Lazy|ScopedBy|ObservedBy|AsCommand|Override)\b"
+)
+PHP_PROP = re.compile(
+    r"(?m)^\s*(?P<vis>public|protected|private)(?:\s+static)?(?:\s+readonly)?"
+    r"(?:\s+\??[\w|\\]+)?\s+\$(?P<name>\w+)\s*[=;]"
+)
+PHP_EXTENDS = re.compile(r"class\s+[A-Za-z_][\w]*\s+extends\s+([A-Za-z_][\w\\]*)")
 JS_DECL = re.compile(
     r"(?m)^\s*(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+(?P<func>[A-Za-z_$][\w$]*)\s*\("
     r"|^\s*(?:export\s+)?(?:const|let|var)\s+(?P<const>[A-Za-z_$][\w$]*)\s*="
     r"|^\s*(?:export\s+(?:default\s+)?)?class\s+(?P<class>[A-Za-z_$][\w$]*)"
 )
 PHP_NAMESPACE = re.compile(r"(?m)^\s*namespace\s+([^;]+);")
-PHP_USE = re.compile(r"(?m)^\s*use\s+([^;]+);")
+PHP_USE = re.compile(r"(?m)^\s*use\s+([^;(]+);")
 JS_IMPORT = re.compile(r"(?m)^\s*import\s+.*?\s+from\s+['\"]([^'\"]+)['\"]")
-ROUTE = re.compile(
-    r"Route::(?P<verb>get|post|put|patch|delete|options|any|match|resource|apiResource)"
-    r"\s*\(\s*(?P<body>[^;\n]+)"
+
+ROUTE_START = re.compile(
+    r"Route::(?P<verb>get|post|put|patch|delete|options|any|match|resource|apiResource"
+    r"|view|redirect|fallback|singleton|apiSingleton)\s*\("
 )
+ROUTE_GROUP = re.compile(
+    r"Route::(?P<chain>(?:prefix|name|middleware|controller|domain)\s*\([^)]*\)"
+    r"(?:\s*->\s*(?:prefix|name|middleware|controller|domain)\s*\([^)]*\))*)"
+    r"\s*->\s*group\s*\("
+)
+GROUP_ATTR = re.compile(r"(?P<key>prefix|name|controller)\s*\(\s*(?P<val>[^)]*)\)")
 ROUTE_STRING = re.compile(r"['\"]([^'\"]*)['\"]")
 ROUTE_CLASS_HANDLER = re.compile(r"([A-Za-z_][\w\\]*)::class(?:\s*,\s*['\"](\w+)['\"])?")
 ROUTE_AT_HANDLER = re.compile(r"['\"]([\w\\]+@\w+)['\"]")
+ROUTE_NAME = re.compile(r"->\s*name\s*\(\s*['\"]([^'\"]+)['\"]")
 HTTP_VERBS = {"get", "post", "put", "patch", "delete", "options", "head", "any"}
+
 RELATION = re.compile(
     r"return\s+\$this->(?P<kind>hasOne|hasMany|belongsTo|belongsToMany|morphOne|morphMany|morphTo|morphToMany|hasOneThrough|hasManyThrough)"
     r"\s*\(\s*(?P<target>[^,\)]+)"
 )
-HOOK = re.compile(
-    r"(?P<verb>add_action|add_filter|do_action|apply_filters|add_shortcode|register_rest_route)"
-    r"\s*\(\s*(?P<body>[^;\n]+)"
+DOCTRINE_RELATION = re.compile(
+    r"#\[ORM\\(?P<kind>ManyToOne|OneToMany|ManyToMany|OneToOne)\s*\((?:[^)]*?targetEntity\s*:\s*(?P<target>[A-Za-z_][\w\\]*)::class)?"
 )
+HOOK_START = re.compile(
+    r"(?P<verb>add_action|add_filter|do_action|apply_filters|add_shortcode|register_rest_route"
+    r"|register_post_type|register_taxonomy|register_block_type"
+    r"|register_activation_hook|register_deactivation_hook|register_uninstall_hook)\s*\("
+)
+WP_ROW_KINDS = {
+    "add_action", "add_filter", "do_action", "apply_filters", "add_shortcode",
+    "REST", "CPT", "TAXONOMY", "BLOCK", "ACTIVATION", "DEACTIVATION", "UNINSTALL",
+}
 TABLE = re.compile(r"(?:Schema::(?:create|table)|protected\s+\$table\s*=)\s*\(?\s*['\"]([^'\"]+)['\"]")
+ENV_KEY = re.compile(r"env\(\s*['\"]([A-Z0-9_]+)['\"]")
+CONFIG_KEY = re.compile(r"config\(\s*['\"]([a-z0-9_.\-]+)['\"]")
+EVENT_DISPATCH = re.compile(r"(?:event\(\s*new\s+([A-Za-z_][\w\\]*)|([A-Za-z_][\w\\]*Event)::dispatch\()")
+LISTENER_HANDLE = re.compile(r"function\s+handle\s*\(\s*([A-Za-z_][\w\\]*)\s+\$")
+GATE_DEFINE = re.compile(r"Gate::define\(\s*['\"]([^'\"]+)['\"]")
+POLICY_PAIR = re.compile(r"([A-Za-z_][\w\\]*)::class\s*=>\s*([A-Za-z_][\w\\]*Policy)::class")
+SCHEDULE = re.compile(
+    r"(?:Schedule::|\$schedule->)(?P<kind>command|job|call|exec)\s*\(\s*(?P<target>[^,\)\n]{0,120})"
+    r"[^;]{0,400}?->\s*(?P<freq>daily|dailyAt|twiceDaily|hourly|hourlyAt|everyMinute|everyTwoMinutes|everyFiveMinutes|everyTenMinutes|everyFifteenMinutes|everyThirtyMinutes|weekly|weeklyOn|monthly|monthlyOn|quarterly|yearly|cron|everySecond|everyTwoHours|everyThreeHours|everyFourHours|everySixHours)\s*\(([^)]*)\)"
+)
+ON_QUEUE = re.compile(r"(?:->onQueue\(\s*['\"]([^'\"]+)|public\s+\$queue\s*=\s*['\"]([^'\"]+))")
+SCHEMA_BLOCK = re.compile(r"Schema::(?P<op>create|table)\s*\(\s*['\"](?P<table>[^'\"]+)['\"]")
+SCHEMA_COLUMN = re.compile(
+    r"\$table->(?P<method>[a-zA-Z]+)\s*\(\s*(?:['\"](?P<name>[^'\"]+)['\"])?"
+)
+SCHEMA_COLUMN_TYPES = {
+    "id", "bigIncrements", "increments", "string", "text", "mediumText", "longText",
+    "integer", "bigInteger", "unsignedBigInteger", "unsignedInteger", "tinyInteger",
+    "smallInteger", "unsignedTinyInteger", "boolean", "date", "dateTime", "dateTimeTz",
+    "time", "timestamp", "timestampTz", "timestamps", "softDeletes", "decimal", "float",
+    "double", "json", "jsonb", "uuid", "ulid", "foreignId", "foreignUuid", "foreignUlid",
+    "enum", "char", "binary", "ipAddress", "macAddress", "rememberToken", "morphs",
+    "nullableMorphs", "year",
+}
+SCHEMA_INDEXES = {"index", "unique", "primary", "fullText", "spatialIndex", "foreign", "constrained"}
+SCHEMA_DROPS = {"dropColumn", "dropIndex", "dropUnique", "dropForeign", "dropPrimary", "dropSoftDeletes", "dropTimestamps"}
+
+WP_TEMPLATE_FILES = re.compile(
+    r"(?:^|/)(?:front-page|home|single[^/]*|archive[^/]*|page[^/]*|category[^/]*|tag[^/]*"
+    r"|taxonomy[^/]*|author[^/]*|date|search|404|index|singular|attachment|embed)\.php$"
+)
 
 # (path token, short code, human label) — codes keep the generated tables small;
-# the full legend is emitted once in PROJECT_MAP.md.
+# the full legend is emitted once in PROJECT_MAP.md. Tokens containing "/" match
+# as path prefixes; single words match whole word-units of path segments (so
+# "latest" never matches "test", "transaction" never matches "action").
 RESPONSIBILITIES = [
     ("routes/", "routes", "Application route definitions"),
-    # These resources/* checks must come before the generic "resource" check
-    # below, since "resource" is a substring of "resources" and would
-    # otherwise shadow every one of them.
+    ("app/livewire", "livewire", "Livewire component"),
+    ("app/http/livewire", "livewire", "Livewire component"),
+    ("resources/views/livewire", "livewire-view", "Livewire view"),
+    ("app/filament", "filament", "Filament resource/page/widget"),
+    ("app/providers", "provider", "Service provider"),
+    ("app/enums", "enum", "Enum"),
+    ("app/notifications", "notif", "Notification"),
+    ("app/rules", "rule", "Validation rule"),
+    ("database/migrations", "migr", "Database schema migration"),
     ("resources/js/pages", "page", "Inertia/React page"),
     ("resources/js/components", "comp", "React component"),
     ("resources/js/hooks", "hook", "React hook"),
     ("resources/views", "view", "Blade view / server-rendered page"),
+    ("wp-content/mu-plugins", "wp-mu", "WordPress must-use plugin"),
+    ("wp-content/plugins", "wp-plugin", "WordPress plugin"),
+    ("wp-content/themes", "wp-theme", "WordPress theme"),
+    ("src/entity", "entity", "Doctrine/domain entity"),
+    ("config/", "config", "Configuration"),
+    ("tests/", "test", "Automated test"),
     ("controller", "ctrl", "HTTP controller / entry point"),
     ("request", "req", "Validation and request authorization"),
     ("policy", "policy", "Resource authorization"),
@@ -79,6 +164,7 @@ RESPONSIBILITIES = [
     ("resource", "apires", "API/data transformation"),
     ("model", "model", "Persistence model"),
     ("migration", "migr", "Database schema migration"),
+    ("repository", "repo", "Repository"),
     ("service", "svc", "Application/domain service"),
     ("action", "action", "Single-purpose application action"),
     ("handler", "handler", "Application/domain handler"),
@@ -88,23 +174,25 @@ RESPONSIBILITIES = [
     ("observer", "observe", "Model lifecycle observer"),
     ("command", "cmd", "Console command"),
     ("test", "test", "Automated test"),
-    # Kept narrow (full path segments, not bare words like "admin"/"template")
-    # to avoid mislabeling unrelated non-WordPress files.
-    ("wp-content/mu-plugins", "wp-mu", "WordPress must-use plugin"),
-    ("wp-content/plugins", "wp-plugin", "WordPress plugin"),
-    ("wp-content/themes", "wp-theme", "WordPress theme"),
+    ("provider", "provider", "Service provider"),
+    ("entity", "entity", "Doctrine/domain entity"),
     ("woocommerce", "woo", "WooCommerce extension/customization"),
     ("shortcode", "shortcode", "WordPress shortcode handler"),
 ]
+WP_TEMPLATE_RESP = ("wp-template", "WordPress template-hierarchy file")
 DEFAULT_RESPONSIBILITY = ("src", "Project source or configuration")
 LEGEND = {code: label for _, code, label in RESPONSIBILITIES}
 LEGEND[DEFAULT_RESPONSIBILITY[0]] = DEFAULT_RESPONSIBILITY[1]
+LEGEND[WP_TEMPLATE_RESP[0]] = WP_TEMPLATE_RESP[1]
 # Order used to pick the "key files" shown per domain in PROJECT_MAP.md.
 KEY_FILE_PRIORITY = [
-    "ctrl", "model", "svc", "routes", "page", "view", "policy", "action",
-    "handler", "job", "apires", "req",
-    "wp-plugin", "wp-theme", "wp-mu", "shortcode", "woo",
+    "ctrl", "livewire", "filament", "model", "svc", "routes", "page", "view",
+    "policy", "action", "handler", "job", "apires", "req", "entity", "repo", "provider",
+    "wp-plugin", "wp-theme", "wp-mu", "wp-template", "shortcode", "woo",
 ]
+
+WORD_SPLIT = re.compile(r"[-_.\s]+|(?<=[a-z0-9])(?=[A-Z])")
+
 
 def digest(path: Path) -> str:
     h = hashlib.sha256()
@@ -113,9 +201,13 @@ def digest(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+
 def is_ignored(rel: str) -> bool:
     rel = rel.replace("\\", "/")
-    return any(rel == p.rstrip("/") or rel.startswith(p) for p in IGNORE_PREFIXES)
+    if any(rel == p.rstrip("/") or rel.startswith(p) for p in IGNORE_PREFIXES):
+        return True
+    return any(part in IGNORE_ANYWHERE for part in rel.split("/"))
+
 
 def discover(root: Path) -> list[Path]:
     files = []
@@ -137,7 +229,199 @@ def discover(root: Path) -> list[Path]:
                 files.append(Path(dirpath) / name)
     return sorted(files)
 
-def domain_of(rel: str) -> str:
+
+# ---------------------------------------------------------------------------
+# Stack detection — single detector consumed by the indexer, ai-dev-init
+# (via --print-stack), and ai-dev-project-rules (via manifest.json["stack"]).
+# ---------------------------------------------------------------------------
+
+def read_json(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def head_text(path: Path, limit: int = 8192) -> str:
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as f:
+            return f.read(limit)
+    except OSError:
+        return ""
+
+
+def detect_stack(root: Path, source_file_count: int | None = None) -> dict[str, Any]:
+    composer = read_json(root / "composer.json")
+    require: dict[str, str] = {}
+    for key in ("require", "require-dev"):
+        section = composer.get(key)
+        if isinstance(section, dict):
+            require.update({str(k).lower(): str(v) for k, v in section.items()})
+
+    def has_pkg(*names: str) -> bool:
+        return any(n in require for n in names)
+
+    has_composer = (root / "composer.json").exists()
+    laravel = (root / "artisan").exists() or has_pkg("laravel/framework")
+    livewire = has_pkg("livewire/livewire", "livewire/volt") or (root / "app/Livewire").is_dir() or (root / "app/Http/Livewire").is_dir()
+    filament = has_pkg("filament/filament") or (root / "app/Filament").is_dir()
+    inertia = has_pkg("inertiajs/inertia-laravel") or any(
+        (root / f"resources/js/app.{ext}").exists() for ext in ("tsx", "jsx")
+    )
+    blade = (root / "resources/views").is_dir()
+    symfony = has_pkg("symfony/framework-bundle") or (root / "config/bundles.php").exists()
+
+    # WordPress subtypes: full site, plugin repo, theme repo.
+    wordpress: dict[str, Any] | None = None
+    if (root / "wp-config.php").exists() or (root / "wp-load.php").exists() or (root / "wp-content").is_dir():
+        woo = (root / "wp-content/plugins/woocommerce").is_dir()
+        wordpress = {"type": "site", "block_theme": False, "woocommerce": woo}
+    else:
+        for php in sorted(root.glob("*.php")):
+            head = head_text(php)
+            if re.search(r"^\s*\*?\s*Plugin Name\s*:", head, re.MULTILINE):
+                woo = "woocommerce" in require or bool(re.search(r"WC requires at least", head))
+                wordpress = {"type": "plugin", "block_theme": False, "woocommerce": woo}
+                break
+        if wordpress is None and (root / "style.css").exists():
+            head = head_text(root / "style.css")
+            if re.search(r"^\s*\*?\s*Theme Name\s*:", head, re.MULTILINE):
+                block = (root / "theme.json").exists() or bool(list(root.glob("templates/*.html")))
+                wordpress = {"type": "theme", "block_theme": block, "woocommerce": False}
+
+    if has_pkg("pestphp/pest") or (root / "tests/Pest.php").exists():
+        testing = "pest"
+    elif has_pkg("phpunit/phpunit") or (root / "phpunit.xml").exists() or (root / "phpunit.xml.dist").exists():
+        testing = "phpunit"
+    else:
+        testing = "none"
+
+    if has_pkg("larastan/larastan", "nunomaduro/larastan"):
+        static_analysis = "larastan"
+    elif has_pkg("phpstan/phpstan") or any((root / n).exists() for n in ("phpstan.neon", "phpstan.neon.dist", "phpstan.dist.neon")):
+        static_analysis = "phpstan"
+    elif has_pkg("vimeo/psalm") or (root / "psalm.xml").exists():
+        static_analysis = "psalm"
+    else:
+        static_analysis = "none"
+
+    if has_pkg("laravel/pint") or (root / "pint.json").exists():
+        formatter = "pint"
+    elif has_pkg("friendsofphp/php-cs-fixer") or (root / ".php-cs-fixer.dist.php").exists() or (root / ".php-cs-fixer.php").exists():
+        formatter = "php-cs-fixer"
+    elif has_pkg("squizlabs/php_codesniffer"):
+        formatter = "phpcs"
+    else:
+        formatter = "none"
+
+    scripts = {}
+    raw_scripts = composer.get("scripts")
+    if isinstance(raw_scripts, dict):
+        for name, cmd in raw_scripts.items():
+            if isinstance(cmd, list):
+                cmd = " && ".join(str(c) for c in cmd)
+            scripts[str(name)] = str(cmd)[:120]
+
+    psr4: dict[str, str] = {}
+    autoload = composer.get("autoload")
+    if isinstance(autoload, dict) and isinstance(autoload.get("psr-4"), dict):
+        for prefix, path in autoload["psr-4"].items():
+            if isinstance(path, list):
+                path = path[0] if path else ""
+            psr4[str(prefix)] = str(path).strip("/")
+
+    new_project = (
+        not has_composer and not laravel and wordpress is None
+        and (source_file_count is not None and source_file_count < 3)
+    )
+
+    return {
+        "laravel": laravel,
+        "livewire": livewire,
+        "filament": filament,
+        "horizon": has_pkg("laravel/horizon"),
+        "inertia": inertia,
+        "blade": blade,
+        "sanctum": has_pkg("laravel/sanctum"),
+        "passport": has_pkg("laravel/passport"),
+        "tenancy": has_pkg("stancl/tenancy", "spatie/laravel-multitenancy"),
+        "symfony": symfony,
+        "composer": has_composer,
+        "node": (root / "package.json").exists(),
+        "wordpress": wordpress,
+        "php_version": str(require.get("php", "")),
+        "testing": testing,
+        "static_analysis": static_analysis,
+        "formatter": formatter,
+        "composer_scripts": scripts,
+        "psr4": psr4,
+        "new_project": new_project,
+    }
+
+
+def stack_labels(stack: dict[str, Any]) -> list[str]:
+    labels = []
+    if stack["laravel"]:
+        labels.append("Laravel")
+    if stack["livewire"]:
+        labels.append("Livewire")
+    if stack["filament"]:
+        labels.append("Filament")
+    if stack["inertia"]:
+        labels.append("Inertia")
+    if stack["blade"]:
+        labels.append("Blade")
+    if stack["symfony"]:
+        labels.append("Symfony")
+    wp = stack.get("wordpress")
+    if wp:
+        labels.append(f"WordPress ({wp['type']})")
+        if wp.get("woocommerce"):
+            labels.append("WooCommerce")
+    if stack["composer"] and not labels:
+        labels.append("PHP (Composer)")
+    if stack["node"]:
+        labels.append("Node.js")
+    return labels or ["Generic"]
+
+
+# ---------------------------------------------------------------------------
+# Responsibility + domain classification
+# ---------------------------------------------------------------------------
+
+def word_units(rel: str) -> set[str]:
+    units: set[str] = set()
+    parts = Path(rel).parts
+    for i, segment in enumerate(parts):
+        # The framework asset root `resources/` must never satisfy the word
+        # token "resource" (API resources live under app/**/Resources).
+        if i == 0 and segment.lower() == "resources":
+            continue
+        stem = segment
+        if "." in segment and segment == parts[-1]:
+            stem = segment.split(".")[0]
+        for unit in WORD_SPLIT.split(stem):
+            if unit:
+                units.add(unit.lower())
+    return units
+
+
+def responsibility(rel: str, is_wp: bool = False) -> str:
+    low = rel.lower()
+    if is_wp and rel.endswith((".php", ".html")) and WP_TEMPLATE_FILES.search(low):
+        return WP_TEMPLATE_RESP[0]
+    units = word_units(rel)
+    for token, code, _label in RESPONSIBILITIES:
+        if "/" in token:
+            if low.startswith(token) or f"/{token}" in low:
+                return code
+        elif token in units or f"{token}s" in units:
+            return code
+    return DEFAULT_RESPONSIBILITY[0]
+
+
+def domain_of(rel: str, psr4_dirs: list[str]) -> str:
     parts = Path(rel).parts
     if rel.startswith("app/"):
         if len(parts) >= 4 and parts[1] in {"Domain", "Domains", "Modules"}:
@@ -157,41 +441,77 @@ def domain_of(rel: str) -> str:
         return "Database"
     if rel.startswith("tests/"):
         return "Tests"
+    if rel.startswith("config/"):
+        return "Config"
     if rel.startswith("wp-content/plugins/"):
         return parts[2] if len(parts) > 2 else "Plugins"
     if rel.startswith("wp-content/themes/"):
         return parts[2] if len(parts) > 2 else "Themes"
     if rel.startswith("wp-content/mu-plugins/"):
         return "Must-Use Plugins"
-    return parts[0] if parts else "Root"
+    # PSR-4 autoload roots (e.g. src/): the first subdirectory is the domain.
+    for base in psr4_dirs:
+        if base and rel.startswith(base + "/"):
+            rest = parts[len(Path(base).parts):]
+            if len(rest) >= 2:
+                return rest[0]
+            return Path(base).parts[0].capitalize()
+    if len(parts) <= 1:
+        return "Root"
+    return parts[0]
 
-def responsibility(rel: str) -> str:
-    low = rel.lower()
-    for token, code, _label in RESPONSIBILITIES:
-        if token in low:
-            return code
-    return DEFAULT_RESPONSIBILITY[0]
 
-def parse_hook(verb: str, body: str) -> dict[str, str]:
-    strings = ROUTE_STRING.findall(body)
-    # register_rest_route(namespace, route, ...) — the endpoint is the first
-    # two strings combined; every other hook names itself in the first string.
-    if verb == "register_rest_route" and len(strings) > 1:
-        strings = [strings[0].rstrip("/") + "/" + strings[1].lstrip("/")] + strings[2:]
-    uri = strings[0] if strings else ""
-    handler = ""
-    m = ROUTE_CLASS_HANDLER.search(body)
-    if m:
-        cls = m.group(1).rsplit("\\", 1)[-1]
-        handler = f"{cls}@{m.group(2)}" if m.group(2) else cls
-    else:
-        # Skip the literal 'callback' array key so ['callback' => 'fn'] maps to fn.
-        candidates = [s for s in strings[1:] if s != "callback"]
-        if candidates:
-            handler = candidates[0].rsplit("\\", 1)[-1]
-    return {"method": verb, "uri": uri, "handler": handler or "closure"}
+# ---------------------------------------------------------------------------
+# Route / hook parsing
+# ---------------------------------------------------------------------------
 
-def parse_route(verb: str, body: str) -> dict[str, str]:
+def statement_body(text: str, start: int, cap: int = 400) -> str:
+    """From an opening position, consume until the first `;` at paren depth 0."""
+    depth = 0
+    end = min(len(text), start + cap)
+    for i in range(start, end):
+        c = text[i]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        elif c == ";" and depth <= 0:
+            return text[start:i]
+    return text[start:end]
+
+
+def brace_spans(text: str) -> list[tuple[int, int, dict[str, str]]]:
+    """Spans of Route::...->group(function() { ... }) blocks with their attrs."""
+    spans = []
+    for m in ROUTE_GROUP.finditer(text):
+        attrs: dict[str, str] = {}
+        for am in GROUP_ATTR.finditer(m.group("chain")):
+            raw = am.group("val")
+            sm = ROUTE_STRING.search(raw)
+            cm = re.search(r"([A-Za-z_][\w\\]*)::class", raw)
+            if am.group("key") == "controller" and cm:
+                attrs["controller"] = cm.group(1).rsplit("\\", 1)[-1]
+            elif sm:
+                attrs[am.group("key")] = sm.group(1)
+        brace = text.find("{", m.end())
+        if brace == -1:
+            continue
+        depth = 0
+        close = -1
+        for i in range(brace, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    close = i
+                    break
+        if close != -1:
+            spans.append((brace, close, attrs))
+    return spans
+
+
+def parse_route(verb: str, body: str, groups: list[dict[str, str]]) -> dict[str, str]:
     strings = ROUTE_STRING.findall(body)
     uri = next((s for s in strings if s.lower() not in HTTP_VERBS and "@" not in s), strings[0] if strings else "")
     handler = ""
@@ -203,58 +523,308 @@ def parse_route(verb: str, body: str) -> dict[str, str]:
         m = ROUTE_AT_HANDLER.search(body)
         if m:
             handler = m.group(1).rsplit("\\", 1)[-1]
-    return {"method": verb.upper(), "uri": uri, "handler": handler or "closure"}
+    prefix_parts = [g["prefix"].strip("/") for g in groups if g.get("prefix")]
+    if prefix_parts:
+        uri = "/".join(prefix_parts + [uri.lstrip("/")])
+    if not handler:
+        # Route::get('/x', 'method') inside Route::controller(X::class)->group()
+        controller = next((g["controller"] for g in reversed(groups) if g.get("controller")), "")
+        method_str = next((s for s in strings[1:] if s != uri), "")
+        if controller and method_str and "/" not in method_str:
+            handler = f"{controller}@{method_str}"
+    name_m = ROUTE_NAME.search(body)
+    name = name_m.group(1) if name_m else ""
+    name_prefix = "".join(g["name"] for g in groups if g.get("name"))
+    if name:
+        name = name_prefix + name
+    route = {"method": verb.upper(), "uri": uri, "handler": handler or "closure"}
+    if name:
+        route["name"] = name
+    return route
 
-def parse(path: Path, rel: str) -> dict[str, Any]:
+
+def parse_hook(verb: str, body: str) -> dict[str, str]:
+    strings = ROUTE_STRING.findall(body)
+
+    if verb == "register_rest_route":
+        uri = ""
+        if len(strings) > 1:
+            uri = strings[0].rstrip("/") + "/" + strings[1].lstrip("/")
+        elif strings:
+            uri = strings[0]
+        # Resolve the callback positionally: find the 'callback' array key and
+        # take the value after its =>. "First non-key string" wrongly picked up
+        # 'methods' values like GET/POST.
+        handler = ""
+        cb = re.search(r"['\"]callback['\"]\s*=>\s*(.{0,160})", body)
+        if cb:
+            val = cb.group(1)
+            cm = ROUTE_CLASS_HANDLER.search(val)
+            sm = ROUTE_STRING.search(val)
+            if cm:
+                cls = cm.group(1).rsplit("\\", 1)[-1]
+                handler = f"{cls}@{cm.group(2)}" if cm.group(2) else cls
+            elif sm:
+                handler = sm.group(1).rsplit("\\", 1)[-1]
+        if "permission_callback" not in body:
+            handler = (handler or "closure") + " (NO permission_callback)"
+        return {"method": "REST", "uri": uri, "handler": handler or "closure"}
+
+    if verb == "register_post_type":
+        return {"method": "CPT", "uri": strings[0] if strings else "", "handler": ""}
+    if verb == "register_taxonomy":
+        return {"method": "TAXONOMY", "uri": strings[0] if strings else "", "handler": strings[1] if len(strings) > 1 else ""}
+    if verb == "register_block_type":
+        return {"method": "BLOCK", "uri": strings[0] if strings else "", "handler": ""}
+    if verb in ("register_activation_hook", "register_deactivation_hook", "register_uninstall_hook"):
+        kind = verb.split("_")[1].upper()
+        handler = strings[1].rsplit("\\", 1)[-1] if len(strings) > 1 else ""
+        m = ROUTE_CLASS_HANDLER.search(body)
+        if m:
+            cls = m.group(1).rsplit("\\", 1)[-1]
+            handler = f"{cls}@{m.group(2)}" if m.group(2) else cls
+        return {"method": kind, "uri": strings[0].rsplit("/", 1)[-1] if strings else "", "handler": handler or "closure"}
+
+    uri = strings[0] if strings else ""
+    handler = ""
+    m = ROUTE_CLASS_HANDLER.search(body)
+    if m:
+        cls = m.group(1).rsplit("\\", 1)[-1]
+        handler = f"{cls}@{m.group(2)}" if m.group(2) else cls
+    else:
+        candidates = [s for s in strings[1:] if s != "callback"]
+        if candidates:
+            handler = candidates[0].rsplit("\\", 1)[-1]
+    return {"method": verb, "uri": uri, "handler": handler or "closure"}
+
+
+def parse_schema(text: str) -> list[dict[str, Any]]:
+    """Column-level ops per Schema::create/table block, for SCHEMA.md."""
+    blocks = []
+    for m in SCHEMA_BLOCK.finditer(text):
+        brace = text.find("{", m.end())
+        if brace == -1:
+            continue
+        depth = 0
+        close = len(text)
+        for i in range(brace, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    close = i
+                    break
+        body = text[brace:close]
+        columns, indexes, drops = [], [], []
+        for cm in SCHEMA_COLUMN.finditer(body):
+            method, name = cm.group("method"), cm.group("name") or ""
+            if method in SCHEMA_DROPS:
+                drops.append(name or method)
+            elif method in SCHEMA_INDEXES:
+                indexes.append(f"{method}({name})" if name else method)
+            elif method in SCHEMA_COLUMN_TYPES:
+                columns.append({"name": name or method, "type": method})
+        blocks.append({
+            "table": m.group("table"), "op": m.group("op"),
+            "columns": columns, "indexes": indexes, "drops": drops,
+        })
+    return blocks
+
+
+# ---------------------------------------------------------------------------
+# Per-file parsing
+# ---------------------------------------------------------------------------
+
+def parse(path: Path, rel: str, is_wp: bool, psr4_dirs: list[str]) -> dict[str, Any]:
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+    if size > MAX_PARSE_BYTES:
+        return {
+            "path": rel, "language": path.suffix.lower().lstrip(".") or path.name,
+            "namespace": None, "responsibility": responsibility(rel, is_wp),
+            "domain": domain_of(rel, psr4_dirs), "symbols": [], "imports": [],
+            "routes": [], "relations": [], "tables": [], "skipped": "too-large",
+        }
+
     text = path.read_text(encoding="utf-8", errors="replace")
-    symbols: list[dict[str, str]] = []
+    symbols: list[dict[str, Any]] = []
     imports: list[str] = []
     routes: list[dict[str, str]] = []
     relations: list[dict[str, str]] = []
+    extras: dict[str, Any] = {}
     namespace = None
+
+    def line_of(pos: int) -> int:
+        return text.count("\n", 0, pos) + 1
 
     if path.suffix.lower() == ".php" or rel.startswith("routes/"):
         m = PHP_NAMESPACE.search(text)
         namespace = m.group(1).strip() if m else None
-        for m in PHP_DECL.finditer(text):
+
+        first_type_pos = None
+        current_class = None
+        pending_attrs: list[str] = []
+        # Interleave attribute lines and declarations by position.
+        events = sorted(
+            [(m.start(), "attr", m) for m in PHP_ATTR.finditer(text)]
+            + [(m.start(), "decl", m) for m in PHP_DECL.finditer(text)]
+            + [(m.start(), "prop", m) for m in PHP_PROP.finditer(text)],
+            key=lambda e: e[0],
+        )
+        for pos, kind, m in events:
+            if kind == "attr":
+                pending_attrs.append(m.group("name"))
+                continue
+            if kind == "prop":
+                sym = {"kind": "prop", "name": m.group("name"), "line": line_of(pos),
+                       "visibility": m.group("vis")}
+                if current_class:
+                    sym["class"] = current_class
+                if pending_attrs:
+                    sym["attrs"] = pending_attrs
+                pending_attrs = []
+                symbols.append(sym)
+                continue
             if m.group("func"):
-                symbols.append({"kind": "function", "name": m.group("func")})
+                sym: dict[str, Any] = {"kind": "function", "name": m.group("func"), "line": line_of(pos)}
+                if current_class:
+                    sym["class"] = current_class
+                vis = re.search(r"\b(public|protected|private)\b", m.group("prefix") or "")
+                if vis:
+                    sym["visibility"] = vis.group(1)
+                if pending_attrs:
+                    sym["attrs"] = pending_attrs
             else:
-                symbols.append({"kind": m.group("kind"), "name": m.group("type")})
-        imports = [m.group(1).strip() for m in PHP_USE.finditer(text)]
-        for m in ROUTE.finditer(text):
-            routes.append(parse_route(m.group("verb"), m.group("body")))
+                current_class = m.group("type")
+                if first_type_pos is None:
+                    first_type_pos = pos
+                sym = {"kind": m.group("kind"), "name": m.group("type"), "line": line_of(pos)}
+                if pending_attrs:
+                    sym["attrs"] = pending_attrs
+            pending_attrs = []
+            symbols.append(sym)
+
+        # `use` before the first type declaration = import; inside a class = trait use.
+        trait_uses = []
+        for um in PHP_USE.finditer(text):
+            target = um.group(1).strip()
+            if first_type_pos is None or um.start() < first_type_pos:
+                imports.append(target)
+            else:
+                trait_uses.append(target.split(",")[0].strip().rsplit("\\", 1)[-1])
+        if trait_uses:
+            extras["traits"] = trait_uses[:20]
+
+        groups = brace_spans(text)
+        for rm in ROUTE_START.finditer(text):
+            body = statement_body(text, rm.end())
+            active = [attrs for start, end, attrs in groups if start < rm.start() < end]
+            routes.append(parse_route(rm.group("verb"), body, active))
+        for hm in HOOK_START.finditer(text):
+            body = statement_body(text, hm.end())
+            routes.append(parse_hook(hm.group("verb"), body))
+
         for m in RELATION.finditer(text):
             relations.append({
                 "kind": "eloquent",
                 "type": m.group("kind"),
                 "target": " ".join(m.group("target").split())[:200],
             })
-        # WordPress hooks/filters/shortcodes/REST routes are that ecosystem's
-        # entry points, the same role Route:: calls play for Laravel — surface
-        # them through the same `routes` field so they land in ROUTES.md for free.
-        for m in HOOK.finditer(text):
-            routes.append(parse_hook(m.group("verb"), m.group("body")))
+        for m in DOCTRINE_RELATION.finditer(text):
+            if m.group("target"):
+                relations.append({
+                    "kind": "doctrine", "type": m.group("kind"),
+                    "target": m.group("target").rsplit("\\", 1)[-1],
+                })
+        for m in LISTENER_HANDLE.finditer(text):
+            relations.append({"kind": "listens", "type": "handle", "target": m.group(1).rsplit("\\", 1)[-1]})
+        for m in EVENT_DISPATCH.finditer(text):
+            target = (m.group(1) or m.group(2) or "").rsplit("\\", 1)[-1]
+            if target:
+                relations.append({"kind": "event", "type": "dispatch", "target": target})
+        for m in POLICY_PAIR.finditer(text):
+            relations.append({"kind": "policy", "type": "maps", "target": f"{m.group(1).rsplit(chr(92), 1)[-1]} => {m.group(2).rsplit(chr(92), 1)[-1]}"})
+
+        gates = [m.group(1) for m in GATE_DEFINE.finditer(text)]
+        if gates:
+            extras["gates"] = gates[:20]
+
+        schedules = []
+        for m in SCHEDULE.finditer(text):
+            target = m.group("target").strip().strip("'\"")
+            target = target.rsplit("\\", 1)[-1].replace("::class", "")
+            freq = m.group("freq")
+            arg = m.group(4).strip().strip("'\"")
+            schedules.append({"kind": m.group("kind"), "target": target[:80], "frequency": f"{freq}({arg})" if arg else freq})
+        if schedules:
+            extras["schedule"] = schedules
+
+        base_class = ""
+        bm = PHP_EXTENDS.search(text)
+        if bm:
+            base_class = bm.group(1).rsplit("\\", 1)[-1]
+            extras["extends"] = base_class
+
+        if "Livewire" in text and base_class == "Component" and current_class:
+            routes.append({"method": "LIVEWIRE", "uri": current_class, "handler": current_class})
+        if rel.startswith("app/Filament") and current_class and current_class.endswith("Resource"):
+            model_m = re.search(r"\$model\s*=\s*([A-Za-z_][\w\\]*)::class", text)
+            routes.append({
+                "method": "FILAMENT", "uri": current_class,
+                "handler": model_m.group(1).rsplit("\\", 1)[-1] if model_m else "",
+            })
+
+        if "implements" in text or "ShouldQueue" in text:
+            queue_meta = {}
+            if re.search(r"implements[^{]*ShouldQueue", text):
+                queue_meta["queued"] = True
+            if re.search(r"implements[^{]*ShouldBeUnique", text) or "ShouldBeUnique" in text and "implements" in text:
+                if re.search(r"ShouldBeUnique", text):
+                    queue_meta["unique"] = True
+            qm = ON_QUEUE.search(text)
+            if qm:
+                queue_meta["queue"] = qm.group(1) or qm.group(2)
+            if queue_meta:
+                extras["queue"] = queue_meta
+
+        env_keys = sorted(set(ENV_KEY.findall(text)))[:20]
+        config_keys = sorted(set(CONFIG_KEY.findall(text)))[:20]
+        if env_keys:
+            extras["env_keys"] = env_keys
+        if config_keys:
+            extras["config_keys"] = config_keys
+
+        if rel.startswith("database/migrations/"):
+            schema = parse_schema(text)
+            if schema:
+                extras["schema"] = schema
+
     elif path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx", ".vue"}:
         for m in JS_DECL.finditer(text):
             name = m.group("func") or m.group("const") or m.group("class")
             kind = "function" if m.group("func") else ("class" if m.group("class") else "export")
-            symbols.append({"kind": kind, "name": name})
+            symbols.append({"kind": kind, "name": name, "line": line_of(m.start())})
         imports = [m.group(1) for m in JS_IMPORT.finditer(text)]
 
-    tables = sorted(set(TABLE.findall(text)))
-    return {
+    tables = sorted(set(TABLE.findall(text))) if path.suffix.lower() in {".php", ".sql"} else []
+    record = {
         "path": rel,
         "language": path.suffix.lower().lstrip(".") or path.name,
         "namespace": namespace,
-        "responsibility": responsibility(rel),
-        "domain": domain_of(rel),
+        "responsibility": responsibility(rel, is_wp),
+        "domain": domain_of(rel, psr4_dirs),
         "symbols": symbols,
         "imports": imports[:100],
         "routes": routes,
         "relations": relations,
         "tables": tables,
     }
+    record.update(extras)
+    return record
+
 
 def internal_import_filter(records: dict[str, Any]):
     # Keep only project-internal imports in RELATIONS.md: PHP imports whose
@@ -276,6 +846,18 @@ def internal_import_filter(records: dict[str, Any]):
 
     return is_internal
 
+
+def write_if_changed(path: Path, content: str) -> None:
+    """Write only when content differs — keeps re-runs free of mtime churn."""
+    if path.exists():
+        try:
+            if path.read_text(encoding="utf-8") == content:
+                return
+        except OSError:
+            pass
+    path.write_text(content, encoding="utf-8")
+
+
 def markdown_table(headers: list[str], rows: list[list[str]]) -> str:
     out = ["| " + " | ".join(headers) + " |", "|" + "|".join(["---"] * len(headers)) + "|"]
     for row in rows:
@@ -283,13 +865,51 @@ def markdown_table(headers: list[str], rows: list[list[str]]) -> str:
         out.append("| " + " | ".join(safe) + " |")
     return "\n".join(out)
 
+
+def runtime_routes(root: Path) -> list[dict[str, str]] | None:
+    """Opt-in ground truth: `php artisan route:list --json` (never automatic)."""
+    if not (root / "artisan").exists():
+        return None
+    try:
+        proc = subprocess.run(
+            ["php", "artisan", "route:list", "--json"],
+            cwd=root, capture_output=True, text=True, timeout=15,
+        )
+        if proc.returncode != 0:
+            return None
+        data = json.loads(proc.stdout)
+        rows = []
+        for r in data:
+            rows.append({
+                "method": str(r.get("method", "")).split("|")[0],
+                "uri": str(r.get("uri", "")),
+                "name": str(r.get("name") or ""),
+                "handler": str(r.get("action", "")).rsplit("\\", 1)[-1],
+                "middleware": ",".join(r.get("middleware", [])) if isinstance(r.get("middleware"), list) else str(r.get("middleware") or ""),
+            })
+        return rows
+    except Exception:
+        return None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("project", nargs="?", default=".")
     ap.add_argument("--full", action="store_true")
+    ap.add_argument("--print-stack", action="store_true",
+                    help="print detected stack JSON and exit (writes nothing)")
+    ap.add_argument("--runtime", action="store_true",
+                    help="additionally run `php artisan route:list --json` for ground-truth routes (opt-in; executes project code)")
     args = ap.parse_args()
 
     root = Path(args.project).resolve()
+
+    if args.print_stack:
+        files = discover(root)
+        stack = detect_stack(root, source_file_count=len(files))
+        print(json.dumps(stack, ensure_ascii=False, indent=1, sort_keys=True))
+        return
+
     out = root / ".ai/project-index"
     domains_dir = out / "DOMAINS"
     out.mkdir(parents=True, exist_ok=True)
@@ -319,10 +939,15 @@ def main() -> None:
             old_symbols = {}
 
     files = discover(root)
+    stack = detect_stack(root, source_file_count=len(files))
+    is_wp = stack["wordpress"] is not None
+    psr4_dirs = sorted({p for p in stack.get("psr4", {}).values() if p}, key=len, reverse=True)
+
     current_paths = {p.relative_to(root).as_posix(): p for p in files}
     old_hashes = old_manifest.get("files", {})
     records: dict[str, Any] = {}
     manifest_files: dict[str, str] = {}
+    added, modified = [], []
 
     for rel, path in current_paths.items():
         h = digest(path)
@@ -330,40 +955,59 @@ def main() -> None:
         if not args.full and old_hashes.get(rel) == h and rel in old_symbols:
             records[rel] = old_symbols[rel]
         else:
-            records[rel] = parse(path, rel)
+            records[rel] = parse(path, rel, is_wp, psr4_dirs)
+            if rel not in old_hashes:
+                added.append(rel)
+            elif old_hashes.get(rel) != h:
+                modified.append(rel)
+    removed = sorted(set(old_hashes) - set(current_paths))
+
+    # file -> test mapping: match *Test classes and project-namespace imports.
+    class_files: dict[str, str] = {}
+    for rel, rec in records.items():
+        for sym in rec["symbols"]:
+            if sym["kind"] in {"class", "interface", "trait", "enum"}:
+                class_files.setdefault(sym["name"], rel)
+    tested_by: dict[str, set[str]] = defaultdict(set)
+    for rel, rec in records.items():
+        if rec["responsibility"] != "test":
+            continue
+        for sym in rec["symbols"]:
+            if sym["kind"] == "class" and sym["name"].endswith("Test"):
+                target = class_files.get(sym["name"][:-4])
+                if target:
+                    tested_by[target].add(rel)
+        for imp in rec.get("imports", []):
+            cls = imp.split()[0].rsplit("\\", 1)[-1]
+            target = class_files.get(cls)
+            if target and target != rel:
+                tested_by[target].add(rel)
+    for rel, tests in tested_by.items():
+        records[rel]["tested_by"] = sorted(tests)[:10]
 
     domains: dict[str, list[dict[str, Any]]] = defaultdict(list)
     all_routes = []
+    all_hooks = []
     all_relations = []
     for record in records.values():
         domains[record["domain"]].append(record)
         for route in record["routes"]:
-            all_routes.append({"file": record["path"], **route})
+            row = {"file": record["path"], **route}
+            if route["method"] in WP_ROW_KINDS:
+                all_hooks.append(row)
+            else:
+                all_routes.append(row)
         for relation in record["relations"]:
             all_relations.append({"file": record["path"], **relation})
 
-    framework = []
-    if (root / "artisan").exists():
-        framework.append("Laravel")
-    if (root / "resources/js").exists():
-        framework.append("JavaScript/TypeScript frontend")
-    if (root / "wp-content").exists() or (root / "wp-load.php").exists() or (root / "wp-config.php").exists():
-        framework.append("WordPress")
-    if (root / "wp-content/plugins/woocommerce").exists():
-        framework.append("WooCommerce")
-    if (root / "composer.json").exists():
-        framework.append("Composer")
-    if (root / "package.json").exists():
-        framework.append("Node.js")
-
-    # PROJECT_MAP.md is the tier-1 read: stack, domains, entry points, legend,
-    # and a few key files per domain — most tasks should need only this file
-    # plus one DOMAINS/*.md.
+    # PROJECT_MAP.md is the tier-1 read: stack, domains, entry points, quality
+    # gates, legend, and a few key files per domain — most tasks should need
+    # only this file plus one DOMAINS/*.md (or an `ai-dev query` call).
     project_map = [
         "# Project Map",
         "",
         f"- Index version: `{VERSION}`",
-        f"- Detected stack: `{', '.join(framework) or 'Generic'}`",
+        f"- Detected stack: `{', '.join(stack_labels(stack))}`",
         f"- Indexed files: `{len(records)}`",
         "",
         "## Domains",
@@ -371,10 +1015,53 @@ def main() -> None:
     ]
     for name in sorted(domains):
         project_map.append(f"- [{name}](DOMAINS/{re.sub(r'[^A-Za-z0-9._-]+', '-', name)}.md): {len(domains[name])} files")
+
+    # Stack-driven entry points.
+    entry_candidates: list[str] = []
+    if stack["laravel"]:
+        entry_candidates += [
+            "routes/web.php", "routes/api.php", "routes/console.php",
+            "bootstrap/app.php", "bootstrap/providers.php", "app/Http/Kernel.php",
+            "resources/js/app.tsx", "resources/js/app.jsx",
+        ]
+    if stack["symfony"]:
+        entry_candidates += ["public/index.php", "src/Kernel.php", "config/bundles.php", "bin/console"]
+    if is_wp:
+        wp_type = stack["wordpress"]["type"]
+        if wp_type == "theme":
+            entry_candidates += ["functions.php", "theme.json", "style.css"]
+        elif wp_type == "plugin":
+            entry_candidates += sorted(
+                rel for rel in records
+                if "/" not in rel and rel.endswith(".php")
+            )[:5] + ["uninstall.php"]
+        else:
+            entry_candidates += sorted(
+                rel for rel in records if rel.startswith("wp-content/mu-plugins/")
+            )[:5]
+    if not entry_candidates:
+        entry_candidates = ["public/index.php", "index.php", "composer.json"]
+
     project_map += ["", "## Primary entry points", ""]
-    for candidate in ["routes/web.php", "routes/api.php", "routes/console.php", "app/Http/Kernel.php", "bootstrap/app.php", "resources/js/app.tsx", "resources/js/app.jsx"]:
+    for candidate in entry_candidates:
         if candidate in records:
             project_map.append(f"- `{candidate}` — {LEGEND[records[candidate]['responsibility']]}")
+
+    if stack["composer"]:
+        gates_line = []
+        for tool_key, label in (("testing", "tests"), ("static_analysis", "static analysis"), ("formatter", "formatter")):
+            if stack[tool_key] != "none":
+                gates_line.append(f"{label}: `{stack[tool_key]}`")
+        project_map += ["", "## Quality gates", ""]
+        if gates_line:
+            project_map.append("- " + " | ".join(gates_line))
+        scripts = stack.get("composer_scripts", {})
+        for name in ("test", "lint", "analyse", "analyze", "format", "check"):
+            if name in scripts:
+                project_map.append(f"- `composer {name}` → `{scripts[name]}`")
+        if len(project_map) and project_map[-1] == "":
+            project_map.append("_No quality tooling detected._")
+
     project_map += ["", "## Key files per domain", ""]
     priority = {code: i for i, code in enumerate(KEY_FILE_PRIORITY)}
     for name in sorted(domains):
@@ -393,12 +1080,99 @@ def main() -> None:
         "",
         ", ".join(f"`{code}`={label}" for code, label in sorted(LEGEND.items())),
     ]
-    (out / "PROJECT_MAP.md").write_text("\n".join(project_map) + "\n", encoding="utf-8")
+    write_if_changed(out / "PROJECT_MAP.md", "\n".join(project_map) + "\n")
 
-    route_rows = [[r["method"], r["uri"], r["handler"], r["file"]] for r in all_routes]
-    routes_md = "# Routes\n\n"
-    routes_md += markdown_table(["Method", "URI", "Handler", "File"], route_rows) if route_rows else "_No routes detected._"
-    (out / "ROUTES.md").write_text(routes_md + "\n", encoding="utf-8")
+    # ROUTES.md — application routes (Laravel/Livewire/Filament).
+    rt_rows = runtime_routes(root) if args.runtime else None
+    if rt_rows is not None:
+        routes_md = "# Routes\n\n_source: `php artisan route:list --json`_\n\n"
+        routes_md += markdown_table(
+            ["Method", "URI", "Name", "Handler", "Middleware"],
+            [[r["method"], r["uri"], r["name"], r["handler"], r["middleware"]] for r in rt_rows],
+        )
+    else:
+        route_rows = [[r["method"], r["uri"], r.get("name", ""), r["handler"], r["file"]] for r in all_routes]
+        routes_md = "# Routes\n\n_source: static parse (best-effort group prefixes); run `ai-dev-project-index . --runtime` for artisan ground truth_\n\n"
+        routes_md += markdown_table(["Method", "URI", "Name", "Handler", "File"], route_rows) if route_rows else "_No routes detected._"
+    write_if_changed(out / "ROUTES.md", routes_md + "\n")
+
+    # HOOKS.md — WordPress hooks, shortcodes, REST routes, CPTs, lifecycle.
+    hooks_path = out / "HOOKS.md"
+    if all_hooks:
+        hook_rows = [[h["method"], h["uri"], h["handler"], h["file"]] for h in all_hooks]
+        hooks_md = "# WordPress Hooks & Entry Points\n\nActions, filters, shortcodes, REST routes (`REST`), custom post types (`CPT`), taxonomies, blocks, and lifecycle hooks.\nRows marked `(NO permission_callback)` are publicly accessible REST endpoints — audit them.\n\n"
+        hooks_md += markdown_table(["Kind", "Hook/URI", "Handler", "File"], hook_rows)
+        write_if_changed(hooks_path, hooks_md + "\n")
+    elif hooks_path.exists():
+        hooks_path.unlink()
+
+    # SCHEMA.md — folded from migration schema ops in filename order.
+    schema_path = out / "SCHEMA.md"
+    schema_tables: dict[str, dict[str, Any]] = {}
+    for rel in sorted(records):
+        for block in records[rel].get("schema", []):
+            table = schema_tables.setdefault(block["table"], {"columns": {}, "indexes": [], "files": []})
+            for col in block["columns"]:
+                table["columns"][col["name"]] = col["type"]
+            for idx in block["indexes"]:
+                if idx not in table["indexes"]:
+                    table["indexes"].append(idx)
+            for drop in block["drops"]:
+                table["columns"].pop(drop, None)
+            if rel not in table["files"]:
+                table["files"].append(rel)
+    if schema_tables:
+        schema_md = ["# Database Schema (from migrations)", "",
+                     "_Folded from `database/migrations/**` in filename order. Non-authoritative — verify against real migrations/DB for schema-changing work._", ""]
+        for table in sorted(schema_tables):
+            info = schema_tables[table]
+            cols = ", ".join(f"{n}:{t}" for n, t in info["columns"].items())
+            schema_md.append(f"## {table}")
+            schema_md.append(f"- columns: {cols or '(none parsed)'}")
+            if info["indexes"]:
+                schema_md.append(f"- indexes: {', '.join(info['indexes'])}")
+            schema_md.append(f"- migrations: {', '.join(info['files'])}")
+            schema_md.append("")
+        write_if_changed(schema_path, "\n".join(schema_md).rstrip() + "\n")
+    elif schema_path.exists():
+        schema_path.unlink()
+
+    # FRAMEWORK.md — events, authorization, queues, schedule (on-demand tier).
+    framework_path = out / "FRAMEWORK.md"
+    fw_sections = []
+    event_rows = []
+    for rel in sorted(records):
+        for r in records[rel]["relations"]:
+            if r["kind"] in {"listens", "event"}:
+                event_rows.append([r["kind"], r["target"], rel])
+    if event_rows:
+        fw_sections.append("## Events\n\n" + markdown_table(["Edge", "Event", "File"], event_rows))
+    auth_rows = []
+    for rel in sorted(records):
+        for r in records[rel]["relations"]:
+            if r["kind"] == "policy":
+                auth_rows.append(["policy", r["target"], rel])
+        for gate in records[rel].get("gates", []):
+            auth_rows.append(["gate", gate, rel])
+    if auth_rows:
+        fw_sections.append("## Authorization\n\n" + markdown_table(["Kind", "Mapping", "File"], auth_rows))
+    queue_rows = []
+    for rel in sorted(records):
+        q = records[rel].get("queue")
+        if q:
+            queue_rows.append([rel, q.get("queue", "default"), "yes" if q.get("unique") else ""])
+    if queue_rows:
+        fw_sections.append("## Queues\n\n" + markdown_table(["Job file", "Queue", "Unique"], queue_rows))
+    schedule_rows = []
+    for rel in sorted(records):
+        for s in records[rel].get("schedule", []):
+            schedule_rows.append([s["kind"], s["target"], s["frequency"], rel])
+    if schedule_rows:
+        fw_sections.append("## Schedule\n\n" + markdown_table(["Kind", "Target", "Frequency", "File"], schedule_rows))
+    if fw_sections:
+        write_if_changed(framework_path, "# Framework Map\n\n" + "\n\n".join(fw_sections) + "\n")
+    elif framework_path.exists():
+        framework_path.unlink()
 
     # FILES.md is a compact path -> domain map; per-file symbols live in
     # DOMAINS/*.md and SYMBOLS.jsonl instead of being duplicated here.
@@ -408,7 +1182,7 @@ def main() -> None:
         for rec in sorted(domains[name], key=lambda r: r["path"]):
             files_md.append(f"- {rec['path']} ({rec['responsibility']})")
         files_md.append("")
-    (out / "FILES.md").write_text("\n".join(files_md).rstrip() + "\n", encoding="utf-8")
+    write_if_changed(out / "FILES.md", "\n".join(files_md).rstrip() + "\n")
 
     is_internal = internal_import_filter(records)
     relation_rows = []
@@ -423,8 +1197,9 @@ def main() -> None:
             relation_rows.append([rel, "table", table])
     relations_md = "# Relationships\n\nProject-internal imports only; full import lists live in SYMBOLS.jsonl.\n\n"
     relations_md += markdown_table(["Source", "Relation", "Target"], relation_rows) if relation_rows else "_No relationships detected._"
-    (out / "RELATIONS.md").write_text(relations_md + "\n", encoding="utf-8")
+    write_if_changed(out / "RELATIONS.md", relations_md + "\n")
 
+    DOMAIN_ROW_CAP = 100
     existing_domain_files = set(domains_dir.glob("*.md"))
     generated_domain_files = set()
     for name, items in sorted(domains.items()):
@@ -432,17 +1207,20 @@ def main() -> None:
         dest = domains_dir / f"{safe}.md"
         generated_domain_files.add(dest)
         rows = []
-        for rec in sorted(items, key=lambda x: x["path"]):
+        ranked = sorted(items, key=lambda x: x["path"])
+        for rec in ranked[:DOMAIN_ROW_CAP]:
             rows.append([
                 rec["path"],
                 rec["responsibility"],
                 ", ".join(s["name"] for s in rec["symbols"][:10]),
             ])
-        dest.write_text(
+        body = (
             f"# Domain: {name}\n\nResponsibility codes: see PROJECT_MAP.md.\n\n"
-            + markdown_table(["File", "Resp", "Symbols"], rows) + "\n",
-            encoding="utf-8"
+            + markdown_table(["File", "Resp", "Symbols"], rows)
         )
+        if len(ranked) > DOMAIN_ROW_CAP:
+            body += f"\n\n_{len(ranked) - DOMAIN_ROW_CAP} more files — run `ai-dev query domain {name}` or grep `SYMBOLS.jsonl`._"
+        write_if_changed(dest, body + "\n")
     for stale in existing_domain_files - generated_domain_files:
         stale.unlink()
 
@@ -451,25 +1229,37 @@ def main() -> None:
     symbol_lines = [json.dumps({"version": VERSION, "files": len(records)}, ensure_ascii=False, separators=(",", ":"))]
     for rel in sorted(records):
         symbol_lines.append(json.dumps(records[rel], ensure_ascii=False, separators=(",", ":")))
-    symbols_path.write_text("\n".join(symbol_lines) + "\n", encoding="utf-8")
+    write_if_changed(symbols_path, "\n".join(symbol_lines) + "\n")
     if legacy_symbols_path.exists():
         legacy_symbols_path.unlink()
 
     manifest = {
         "version": VERSION,
+        "stack": stack,
         "files": manifest_files,
     }
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_if_changed(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
 
-    readme = out / "README.md"
-    if not readme.exists():
-        readme.write_text(
-            "# Project Intelligence Index\n\nGenerated by `ai-dev-project-index`.\n",
-            encoding="utf-8"
+    # Delta view for follow-up tasks (`ai-dev query changed`). Content-only —
+    # no timestamps, so output stays deterministic. A run that changed nothing
+    # keeps the previous delta (the most recent real change set) untouched.
+    last_run_path = out / "last-run.json"
+    if added or modified or removed or not last_run_path.exists():
+        last_run = {
+            "added": sorted(added),
+            "modified": sorted(modified),
+            "removed": removed,
+        }
+        write_if_changed(
+            last_run_path,
+            json.dumps(last_run, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
         )
 
     print(f"Project index: {out}")
-    print(f"Indexed: {len(records)} files")
+    print(f"Indexed: {len(records)} files ({', '.join(stack_labels(stack))})")
+    if added or modified or removed:
+        print(f"Changed since last index: +{len(added)} ~{len(modified)} -{len(removed)}")
+
 
 if __name__ == "__main__":
     main()

@@ -1,28 +1,158 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ai-dev [project]              init + index + seed rules (default: .)
-# ai-dev update [projects...]   also refresh seeded rules to the current kit
-#                               templates in one or more projects (skips
-#                               locally modified copies; see --force below)
-# ai-dev update --force [...]   overwrite locally modified seeded rules too
+# ai-dev [--full] [project]        init + index + seed rules (default: .).
+#                                  Auto-applies kit updates when the installed
+#                                  kit is newer than the project's last sync
+#                                  (never overwrites locally modified copies).
+# ai-dev update [--force] [...]    refresh kit-managed files in one or more
+#                                  projects; --force also overwrites locally
+#                                  modified seeded rules.
+# ai-dev query <subcmd> [...]      exact index lookups (see ai-dev-query -h).
 
+# Resolve the real script location through the ~/.local/bin symlink so the
+# kit home (and its VERSION file) is found in both the installed layout and
+# a repo checkout. bash 3.2-safe: no readlink -f.
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in /*) SELF="$LINK" ;; *) SELF="$(dirname "$SELF")/$LINK" ;; esac
+done
+KIT_HOME="${AI_DEV_KIT_HOME:-$(cd "$(dirname "$SELF")/.." && pwd)}"
+KIT_VERSION="$(cat "$KIT_HOME/VERSION" 2>/dev/null || echo unknown)"
+
+is_plain_version() {
+  case "$1" in
+    *[!0-9.]*|"") return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+version_gt() {  # true if $1 > $2 (dot-separated numeric versions)
+  [ "$1" = "$2" ] && return 1
+  is_plain_version "$1" || return 1
+  is_plain_version "$2" || return 1
+  local a1 a2 a3 b1 b2 b3 rest
+  IFS=. read -r a1 a2 a3 rest <<EOF
+$1
+EOF
+  IFS=. read -r b1 b2 b3 rest <<EOF
+$2
+EOF
+  a1=${a1:-0}; a2=${a2:-0}; a3=${a3:-0}
+  b1=${b1:-0}; b2=${b2:-0}; b3=${b3:-0}
+  if [ "$a1" -ne "$b1" ]; then [ "$a1" -gt "$b1" ]; return $?; fi
+  if [ "$a2" -ne "$b2" ]; then [ "$a2" -gt "$b2" ]; return $?; fi
+  [ "$a3" -gt "$b3" ]
+}
+
+INDEX_FLAGS=""
+STAMP_OK=1   # cleared when the project stamp is newer than the installed kit
+
+run_pipeline() {  # $1=project  $2=plain|update  $3=""|--force
+  local project="$1" mode="$2" force="${3:-}"
+  if [ "$mode" = update ]; then
+    ai-dev-init "$project" --update
+    # shellcheck disable=SC2086
+    ai-dev-project-index "$project" $INDEX_FLAGS
+    ai-dev-project-rules "$project" --update ${force:+$force}
+  else
+    ai-dev-init "$project"
+    # shellcheck disable=SC2086
+    ai-dev-project-index "$project" $INDEX_FLAGS
+    ai-dev-project-rules "$project"
+  fi
+  # Stamp only after the full pipeline succeeded (set -e aborts earlier
+  # otherwise), so a failed update retries on the next run. Never write an
+  # "unknown" stamp and never move a newer stamp backwards automatically.
+  if [ "$KIT_VERSION" != unknown ] && [ "$STAMP_OK" -eq 1 ]; then
+    if [ "$(cat "$project/.ai/kit-version" 2>/dev/null || true)" != "$KIT_VERSION" ]; then
+      mkdir -p "$project/.ai"
+      printf '%s\n' "$KIT_VERSION" > "$project/.ai/kit-version"
+    fi
+  fi
+}
+
+# ---- ai-dev query ... : side-effect-free index lookups ----
+if [ "${1:-}" = "query" ]; then
+  shift
+  exec ai-dev-query "$@"
+fi
+
+# ---- ai-dev spec <slug> [project] : scaffold a spec-lite feature dir ----
+# For Tier L/XL work: .ai/specs/NNN-slug/{spec.md,plan.md,tasks.md} with
+# [NEEDS CLARIFICATION] markers and the [ID] [P] [Story] task grammar.
+if [ "${1:-}" = "spec" ]; then
+  shift
+  SLUG="${1:-}"
+  [ -z "$SLUG" ] && { echo "usage: ai-dev spec <slug> [project]" >&2; exit 1; }
+  PROJECT="${2:-.}"
+  SLUG="$(printf '%s' "$SLUG" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')"
+  TPL="$KIT_HOME/templates/specs"
+  [ -d "$TPL" ] || TPL="$KIT_HOME/source/templates/specs"
+  [ -d "$TPL" ] || { echo "spec templates missing — rerun install.sh" >&2; exit 1; }
+  NEXT=1
+  if [ -d "$PROJECT/.ai/specs" ]; then
+    for d in "$PROJECT/.ai/specs"/[0-9][0-9][0-9]-*; do
+      [ -e "$d" ] || continue
+      n="$(basename "$d" | cut -c1-3 | sed 's/^0*//')"
+      [ "$n" -ge "$NEXT" ] && NEXT=$((n + 1))
+    done
+  fi
+  DIR="$PROJECT/.ai/specs/$(printf '%03d' "$NEXT")-$SLUG"
+  mkdir -p "$DIR"
+  for f in spec.md plan.md tasks.md; do
+    sed "s/{{SLUG}}/$SLUG/g" "$TPL/$f" > "$DIR/$f"
+  done
+  echo "Spec scaffolded: $DIR"
+  echo "Order: spec.md (resolve every [NEEDS CLARIFICATION]) -> plan.md -> tasks.md -> implement."
+  exit 0
+fi
+
+# ---- ai-dev update [--force] [--full] [projects...] ----
 if [ "${1:-}" = "update" ]; then
   shift
   FORCE=""
-  if [ "${1:-}" = "--force" ]; then FORCE="--force"; shift; fi
-  [ $# -eq 0 ] && set -- .
-  for PROJECT in "$@"; do
-    echo "== $PROJECT =="
-    ai-dev-init "$PROJECT"
-    ai-dev-project-index "$PROJECT"
-    ai-dev-project-rules "$PROJECT" --update $FORCE
+  PROJECTS=()
+  for arg in "$@"; do
+    case "$arg" in
+      --force) FORCE="--force" ;;
+      --full) INDEX_FLAGS="--full" ;;
+      *) PROJECTS+=("$arg") ;;
+    esac
+  done
+  [ "${#PROJECTS[@]}" -eq 0 ] && PROJECTS=(.)
+  for P in "${PROJECTS[@]}"; do
+    echo "== $P =="
+    run_pipeline "$P" update "$FORCE"
   done
   exit 0
 fi
 
-PROJECT="${1:-.}"
+# ---- default: ai-dev [--full] [project] with automatic version gate ----
+PROJECT="."
+for arg in "$@"; do
+  case "$arg" in
+    --full) INDEX_FLAGS="--full" ;;
+    *) PROJECT="$arg" ;;
+  esac
+done
 
-ai-dev-init "$PROJECT"
-ai-dev-project-index "$PROJECT"
-ai-dev-project-rules "$PROJECT"
+STAMP="$(cat "$PROJECT/.ai/kit-version" 2>/dev/null || true)"
+
+if [ "$KIT_VERSION" = unknown ]; then
+  echo "warning: $KIT_HOME/VERSION missing — rerun install.sh; auto-update disabled" >&2
+  run_pipeline "$PROJECT" plain
+elif [ -z "$STAMP" ]; then
+  echo "ai-dev-kit $KIT_VERSION — first sync of this project"
+  run_pipeline "$PROJECT" update ""
+elif [ "$STAMP" = "$KIT_VERSION" ]; then
+  run_pipeline "$PROJECT" plain
+elif version_gt "$KIT_VERSION" "$STAMP"; then
+  echo "ai-dev-kit $KIT_VERSION installed (project last synced by $STAMP) — refreshing kit-managed files"
+  run_pipeline "$PROJECT" update ""
+else
+  echo "note: project was synced by kit $STAMP, newer than installed $KIT_VERSION — not downgrading; update your kit" >&2
+  STAMP_OK=0
+  run_pipeline "$PROJECT" plain
+fi

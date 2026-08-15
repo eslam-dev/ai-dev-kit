@@ -8,14 +8,16 @@ BACKUP="$CURSOR_HOME/ai-dev-kit-backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$CURSOR_HOME/agents" "$CURSOR_HOME/skills"
 
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share/ai-dev-kit/bin"
-for cmd in ai-dev ai-dev-init ai-dev-project-index ai-dev-project-rules; do
+for cmd in ai-dev ai-dev-init ai-dev-project-index ai-dev-project-rules ai-dev-query; do
   cp "$ROOT/bin/$cmd" "$HOME/.local/share/ai-dev-kit/bin/$cmd"
   chmod +x "$HOME/.local/share/ai-dev-kit/bin/$cmd"
   ln -sfn "$HOME/.local/share/ai-dev-kit/bin/$cmd" "$HOME/.local/bin/$cmd"
 done
+cp "$ROOT/VERSION" "$HOME/.local/share/ai-dev-kit/VERSION"
 
-rm -rf "$HOME/.local/share/ai-dev-kit/project-rules-optional"
+rm -rf "$HOME/.local/share/ai-dev-kit/project-rules-optional" "$HOME/.local/share/ai-dev-kit/templates"
 cp -r "$ROOT/source/project-rules-optional" "$HOME/.local/share/ai-dev-kit/project-rules-optional"
+cp -r "$ROOT/source/templates" "$HOME/.local/share/ai-dev-kit/templates"
 
 install_links() {
   local src_dir="$1" target_dir="$2" prefix="$3"
@@ -73,12 +75,12 @@ elif command -v xsel >/dev/null 2>&1; then
   timeout 2 xsel --clipboard --input < "$RULES_FILE" && COPIED=true
 fi
 
-printf '\nInstall complete — nothing else required.\n'
+printf '\nInstall complete — ai-dev-kit %s. Nothing else required.\n' "$(cat "$ROOT/VERSION")"
 printf 'Every project gets its rules, agents, and index automatically on first task (or run: ai-dev .).\n'
 printf '\nInstalled:\n'
 printf '  Agents: %s/agents/ai-dev-*\n' "$CURSOR_HOME"
 printf '  Skills: %s/skills/ai-dev-*\n' "$CURSOR_HOME"
-printf '  Commands: ai-dev, ai-dev-init, ai-dev-project-index, ai-dev-project-rules\n'
+printf '  Commands: ai-dev, ai-dev-init, ai-dev-project-index, ai-dev-project-rules, ai-dev-query\n'
 
 printf '\nIf you use Cursor: restart it to pick up the new agents/skills.\n'
 

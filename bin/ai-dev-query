@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""ai-dev-query — side-effect-free exact lookups over .ai/project-index/.
+
+Answers in a few lines what would otherwise cost a tiered read chain:
+  ai-dev-query symbol UserController        # where is it? (path:line, owner)
+  ai-dev-query route orders                 # routes matching a substring
+  ai-dev-query hook rest                    # WordPress hooks/CPTs/REST routes
+  ai-dev-query file app/Models/Order.php    # one file's full brief
+  ai-dev-query domain Billing               # domain brief (key files, routes, tables)
+  ai-dev-query table orders                 # columns + files touching the table
+  ai-dev-query env STRIPE_KEY               # files using an env/config key
+  ai-dev-query changed                      # files changed since the last index run
+  ai-dev-query map                          # stack + domains, ultra-compact
+
+Never indexes or writes anything. If the index is missing or stale it prints
+one line telling the caller to run `ai-dev .`.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+SUPPORTED_VERSION = "1.4.0"
+WP_ROW_KINDS = {
+    "add_action", "add_filter", "do_action", "apply_filters", "add_shortcode",
+    "REST", "CPT", "TAXONOMY", "BLOCK", "ACTIVATION", "DEACTIVATION", "UNINSTALL",
+}
+KEY_FILE_PRIORITY = [
+    "ctrl", "livewire", "filament", "model", "svc", "routes", "page", "view",
+    "policy", "action", "handler", "job", "apires", "req", "entity", "repo", "provider",
+    "wp-plugin", "wp-theme", "wp-mu", "wp-template", "shortcode", "woo",
+]
+
+
+def fail(msg: str) -> None:
+    print(msg)
+    sys.exit(1)
+
+
+def load_records(root: Path) -> list[dict]:
+    index = root / ".ai/project-index/SYMBOLS.jsonl"
+    if not index.exists():
+        fail("index missing — run `ai-dev .` first")
+    records = []
+    header = None
+    try:
+        for line in index.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            if header is None and "version" in rec and "path" not in rec:
+                header = rec
+                continue
+            records.append(rec)
+    except Exception:
+        fail("index unreadable — run `ai-dev .` to rebuild it")
+    if not header or header.get("version") != SUPPORTED_VERSION:
+        fail(f"index format {header.get('version') if header else 'unknown'} != {SUPPORTED_VERSION} — run `ai-dev .` to rebuild it")
+    return records
+
+
+def sym_line(rec: dict, sym: dict) -> str:
+    loc = f"{rec['path']}:{sym.get('line', '?')}"
+    owner = f" (in {sym['class']})" if sym.get("class") else ""
+    vis = f" {sym['visibility']}" if sym.get("visibility") else ""
+    attrs = f" #[{','.join(sym['attrs'])}]" if sym.get("attrs") else ""
+    return f"{loc}  {sym['kind']}{vis} {sym['name']}{owner}{attrs}"
+
+
+def cmd_symbol(records, term, limit, as_json):
+    exact, partial = [], []
+    low = term.lower()
+    for rec in records:
+        for sym in rec.get("symbols", []):
+            name = sym.get("name", "")
+            if name == term or (sym.get("class") and f"{sym['class']}::{name}" == term):
+                exact.append((rec, sym))
+            elif low in name.lower():
+                partial.append((rec, sym))
+    hits = exact or partial
+    if as_json:
+        print(json.dumps([{**s, "path": r["path"]} for r, s in hits[:limit]], ensure_ascii=False))
+        return
+    if not hits:
+        fail(f"no symbol matching '{term}'")
+    for rec, sym in hits[:limit]:
+        print(sym_line(rec, sym))
+    if len(hits) > limit:
+        print(f"... {len(hits) - limit} more (raise --limit)")
+
+
+def iter_routes(records, wp: bool):
+    for rec in records:
+        for route in rec.get("routes", []):
+            if (route.get("method") in WP_ROW_KINDS) == wp:
+                yield rec, route
+
+
+def cmd_routes(records, term, limit, as_json, wp=False):
+    low = term.lower()
+    hits = []
+    for rec, route in iter_routes(records, wp):
+        hay = " ".join(str(route.get(k, "")) for k in ("method", "uri", "handler", "name")).lower()
+        if low in hay:
+            hits.append({**route, "file": rec["path"]})
+    if as_json:
+        print(json.dumps(hits[:limit], ensure_ascii=False))
+        return
+    if not hits:
+        fail(f"no {'hook' if wp else 'route'} matching '{term}'")
+    for h in hits[:limit]:
+        name = f"  [{h['name']}]" if h.get("name") else ""
+        print(f"{h['method']:8} {h['uri']}{name}  -> {h['handler']}  ({h['file']})")
+    if len(hits) > limit:
+        print(f"... {len(hits) - limit} more (raise --limit)")
+
+
+def cmd_file(records, term, limit, as_json):
+    low = term.lower()
+    rec = next((r for r in records if r["path"].lower() == low), None) \
+        or next((r for r in records if low in r["path"].lower()), None)
+    if not rec:
+        fail(f"no indexed file matching '{term}'")
+    if as_json:
+        print(json.dumps(rec, ensure_ascii=False))
+        return
+    print(f"{rec['path']}  ({rec['responsibility']}, domain {rec['domain']})")
+    for sym in rec.get("symbols", [])[:limit]:
+        print(f"  {sym_line(rec, sym)}")
+    for route in rec.get("routes", []):
+        print(f"  route: {route['method']} {route['uri']} -> {route['handler']}")
+    for rel in rec.get("relations", [])[:10]:
+        print(f"  {rel['kind']}: {rel['type']} {rel['target']}")
+    if rec.get("tables"):
+        print(f"  tables: {', '.join(rec['tables'])}")
+    if rec.get("tested_by"):
+        print(f"  tested by: {', '.join(rec['tested_by'])}")
+    if rec.get("env_keys"):
+        print(f"  env: {', '.join(rec['env_keys'])}")
+
+
+def cmd_domain(records, term, limit, as_json):
+    low = term.lower()
+    members = [r for r in records if r.get("domain", "").lower() == low]
+    if not members:
+        domains = sorted({r.get("domain", "") for r in records})
+        fail(f"no domain '{term}' — domains: {', '.join(domains)}")
+    priority = {code: i for i, code in enumerate(KEY_FILE_PRIORITY)}
+    ranked = sorted(members, key=lambda r: (priority.get(r["responsibility"], 99), r["path"]))
+    if as_json:
+        print(json.dumps([r["path"] for r in ranked], ensure_ascii=False))
+        return
+    print(f"domain {members[0]['domain']} — {len(members)} files")
+    print("key files:")
+    for rec in ranked[:limit]:
+        syms = ", ".join(s["name"] for s in rec.get("symbols", [])[:5])
+        print(f"  {rec['path']} ({rec['responsibility']}){': ' + syms if syms else ''}")
+    routes = [(r, rt) for r in members for rt in r.get("routes", [])]
+    if routes:
+        print("routes/entry points:")
+        for rec, rt in routes[:limit]:
+            print(f"  {rt['method']} {rt['uri']} -> {rt['handler']}")
+    tables = sorted({t for r in members for t in r.get("tables", [])})
+    if tables:
+        print(f"tables: {', '.join(tables)}")
+    tests = sorted({t for r in members for t in r.get("tested_by", [])})
+    if tests:
+        print(f"tests: {', '.join(tests[:10])}")
+
+
+def cmd_table(records, term, limit, as_json):
+    low = term.lower()
+    columns: dict[str, str] = {}
+    files = []
+    for rec in sorted(records, key=lambda r: r["path"]):
+        for block in rec.get("schema", []):
+            if block["table"].lower() == low:
+                for col in block.get("columns", []):
+                    columns[col["name"]] = col["type"]
+                for drop in block.get("drops", []):
+                    columns.pop(drop, None)
+        if any(t.lower() == low for t in rec.get("tables", [])):
+            files.append(rec["path"])
+    if not columns and not files:
+        fail(f"no table matching '{term}'")
+    if as_json:
+        print(json.dumps({"table": term, "columns": columns, "files": files[:limit]}, ensure_ascii=False))
+        return
+    print(f"table {term}")
+    if columns:
+        print("  columns: " + ", ".join(f"{n}:{t}" for n, t in columns.items()))
+    if files:
+        print("  used by:")
+        for f in files[:limit]:
+            print(f"    {f}")
+
+
+def cmd_env(records, term, limit, as_json):
+    low = term.lower()
+    hits = []
+    for rec in records:
+        keys = [k for k in rec.get("env_keys", []) + rec.get("config_keys", []) if low in k.lower()]
+        if keys:
+            hits.append((rec["path"], keys))
+    if as_json:
+        print(json.dumps([{"path": p, "keys": k} for p, k in hits[:limit]], ensure_ascii=False))
+        return
+    if not hits:
+        fail(f"no env/config key matching '{term}'")
+    for path, keys in hits[:limit]:
+        print(f"{path}: {', '.join(keys)}")
+
+
+def cmd_changed(root, as_json):
+    path = root / ".ai/project-index/last-run.json"
+    if not path.exists():
+        fail("no last-run.json — run `ai-dev .` first")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if as_json:
+        print(json.dumps(data, ensure_ascii=False))
+        return
+    for kind, sign in (("added", "+"), ("modified", "~"), ("removed", "-")):
+        for rel in data.get(kind, []):
+            print(f"{sign} {rel}")
+    if not any(data.get(k) for k in ("added", "modified", "removed")):
+        print("no changes recorded by the last index run")
+
+
+def cmd_map(records, root, as_json):
+    manifest = {}
+    mpath = root / ".ai/project-index/manifest.json"
+    if mpath.exists():
+        try:
+            manifest = json.loads(mpath.read_text(encoding="utf-8"))
+        except Exception:
+            manifest = {}
+    stack = manifest.get("stack", {})
+    domains: dict[str, int] = {}
+    for rec in records:
+        domains[rec.get("domain", "?")] = domains.get(rec.get("domain", "?"), 0) + 1
+    if as_json:
+        print(json.dumps({"stack": stack, "domains": domains}, ensure_ascii=False))
+        return
+    labels = []
+    for key in ("laravel", "livewire", "filament", "inertia", "blade", "symfony"):
+        if stack.get(key):
+            labels.append(key)
+    wp = stack.get("wordpress")
+    if wp:
+        labels.append(f"wordpress:{wp.get('type')}" + (":woocommerce" if wp.get("woocommerce") else ""))
+    print("stack: " + (", ".join(labels) or "generic"))
+    for tool in ("testing", "static_analysis", "formatter"):
+        if stack.get(tool) and stack[tool] != "none":
+            print(f"{tool}: {stack[tool]}")
+    print("domains: " + ", ".join(f"{d}({n})" for d, n in sorted(domains.items())))
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("command", choices=["symbol", "route", "hook", "file", "domain", "table", "env", "changed", "map"])
+    ap.add_argument("term", nargs="?", default="")
+    ap.add_argument("--project", default=".")
+    ap.add_argument("--limit", type=int, default=20)
+    ap.add_argument("--json", action="store_true", dest="as_json")
+    args = ap.parse_args()
+
+    root = Path(args.project).resolve()
+    if args.command == "changed":
+        cmd_changed(root, args.as_json)
+        return
+
+    records = load_records(root)
+    if args.command == "map":
+        cmd_map(records, root, args.as_json)
+        return
+    if not args.term:
+        fail(f"usage: ai-dev-query {args.command} <term>")
+    dispatch = {
+        "symbol": cmd_symbol,
+        "route": lambda r, t, l, j: cmd_routes(r, t, l, j, wp=False),
+        "hook": lambda r, t, l, j: cmd_routes(r, t, l, j, wp=True),
+        "file": cmd_file,
+        "domain": cmd_domain,
+        "table": cmd_table,
+        "env": cmd_env,
+    }
+    dispatch[args.command](records, args.term, args.limit, args.as_json)
+
+
+if __name__ == "__main__":
+    main()

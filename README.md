@@ -1,34 +1,36 @@
 # AI Dev Kit — Project Index First
 
-AI Dev Kit is a global Cursor / Claude Code / VS Code (Copilot) toolkit built for Laravel + Inertia/React
-engineering. It installs once on your machine, then, for every project you work on, it:
+AI Dev Kit is a global Cursor / Claude Code / VS Code (Copilot) toolkit built for PHP engineering —
+Laravel (Blade, Livewire, Inertia + React, Filament) first, WordPress/WooCommerce and generic
+modern PHP (Symfony, plain Composer) close behind. It installs once on your machine, then, for
+every project you work on, it:
 
 1. builds and maintains a persistent, local **Project Intelligence Index** describing the codebase
-   (files, symbols, routes, relationships, domains);
+   (files, symbols with line numbers, routes, hooks, schema, relationships, domains);
 2. generates and maintains **project-specific Cursor rules** (security, performance, architecture,
-   testing, and more), seeded from a curated template library and then evolved per project;
+   testing, and more), seeded from a curated template library gated by the *detected stack* and
+   then evolved per project;
 3. wires the same workflow into whichever AI tool you're using — Cursor, VS Code + GitHub Copilot,
-   Claude Code, generic agent runners that read `AGENTS.md`, and Specify/spec-kit — so every tool reads
-   the same index and rules instead of re-discovering the codebase from scratch on every task.
+   Claude Code, generic agent runners that read `AGENTS.md`, and Specify/spec-kit — so every tool
+   reads the same index and rules instead of re-discovering the codebase from scratch on every task;
+4. **keeps itself up to date inside every project**: when you upgrade the kit, the next plain
+   `ai-dev .` in any project automatically refreshes every kit-managed file, without ever touching
+   your customizations.
 
-It also ships 20 specialized agents and 27 skills for the day-to-day Laravel/Inertia/React engineering
-workflow (routing tasks, backend/frontend/database/security engineering, testing, code review,
-production incidents, new-project bootstrap, project intelligence/rule maintenance, frontend UI/UX and
-Lighthouse auditing, and — for large backlogs — a scaled team hierarchy of team leads, frontend/backend
-developers, and testers under an optional CTO).
+It also ships 21 specialized agents and 30 skills for the day-to-day PHP engineering workflow.
 
 ## Why
 
 Without a persistent index, an AI coding tool has to re-explore a codebase's structure, routes, and
 conventions on every single task — burning time and context, and often missing project-specific
-conventions entirely. AI Dev Kit builds that map once, keeps it updated incrementally, and forces every
-connected tool to consult it before doing a broad search.
+conventions entirely. AI Dev Kit builds that map once, keeps it updated incrementally, and gives
+every connected tool a cheap lookup command (`ai-dev query`) plus a tiered reading protocol so the
+model loads the minimum context that answers the question.
 
 ## Install
 
 Supported on **macOS and Linux** — every script targets bash 3.2+ (macOS's stock `/bin/bash`) and POSIX/BSD
-command behavior, not GNU-only flags. Requires `python3` (macOS: ships via Xcode Command Line Tools — run
-`xcode-select --install` if `python3` isn't found yet) and `bash`.
+command behavior, not GNU-only flags. Requires `python3` and `bash`.
 
 ```bash
 chmod +x install.sh uninstall.sh doctor.sh
@@ -37,56 +39,51 @@ chmod +x install.sh uninstall.sh doctor.sh
 
 That's it — no further setup. This installs globally:
 - **Commands** → symlinked into `~/.local/bin`: `ai-dev`, `ai-dev-init`, `ai-dev-project-index`,
-  `ai-dev-project-rules`. Their real implementation and the curated rule template library live under
-  `~/.local/share/ai-dev-kit/`.
+  `ai-dev-project-rules`, `ai-dev-query`. Their real implementation, the curated rule template
+  library, the spec templates, and the kit `VERSION` live under `~/.local/share/ai-dev-kit/`.
 - **Agents & skills** → symlinked into `~/.cursor/agents/ai-dev-*` and `~/.cursor/skills/ai-dev-*`. Any
   pre-existing file at those paths is moved to a timestamped backup folder first, never deleted.
 
-Every project then gets its rules, agents, and index fully automatically — nothing to paste, copy, or
-configure per project. Make sure `~/.local/bin` is on your `PATH`. If you use Cursor, restart it to pick up
-the new agents/skills.
+Make sure `~/.local/bin` is on your `PATH`. If you use Cursor, restart it to pick up the new
+agents/skills.
 
-**Optional, one-time, global**: `USER_RULES.txt` is also copied to your clipboard during install (`pbcopy`
-on macOS, `wl-copy`/`xclip`/`xsel` on Linux — or its path is printed if none is available). Paste it into
-**Cursor Settings → Rules → User Rules** only if you also want its contents applied as a default across
-every project, on top of the per-project rules above. Skip it entirely if you don't need that.
+**Optional, one-time, global**: `USER_RULES.txt` is copied to your clipboard during install. Paste it
+into **Cursor Settings → Rules → User Rules** if you want its baseline applied across every project.
 
-Re-running `./install.sh` any time is safe — it's idempotent and just re-syncs commands, agents, and
-skills to the current state of this repo.
-
-To remove everything: `./uninstall.sh`. To check that the install is healthy: `./doctor.sh`.
+Re-running `./install.sh` any time is safe and idempotent. To remove everything: `./uninstall.sh`.
+Health check: `./doctor.sh` (checks symlinks, commands, `python3`, the kit version, the always-on
+token budget, and lints the kit's own content).
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `ai-dev .` | Runs the three commands below in order. The only command you need in normal use. |
-| `ai-dev-init .` | Scaffolds the cross-tool adapter files (`CLAUDE.md`, `AGENTS.md`, etc.) — only creates files that don't already exist yet; never overwrites. |
-| `ai-dev-project-index .` | Builds or incrementally updates `.ai/project-index/`. |
-| `ai-dev-project-rules .` | Builds or updates `.cursor/rules/`. |
-| `ai-dev update [projects...]` | Same as `ai-dev .` per project, plus refreshes previously seeded rules to the current kit templates. Copies the project has edited are kept and listed; add `--force` to overwrite them too. Accepts multiple project paths. |
+| `ai-dev .` | Init + index + rules in one step, **with automatic kit-update detection**. The only command normal use requires. |
+| `ai-dev query <sub> <term>` | Side-effect-free exact lookups over the index (see below). |
+| `ai-dev spec <slug>` | Scaffolds `.ai/specs/NNN-slug/{spec,plan,tasks}.md` for large (Tier L/XL) features. |
+| `ai-dev update [--force] [projects...]` | Manual refresh of kit-managed files; `--force` also overwrites locally modified seeded rules. |
+| `ai-dev-init .` | Adapter scaffolding only. |
+| `ai-dev-project-index . [--full] [--runtime] [--print-stack]` | Index only. `--runtime` additionally runs `php artisan route:list --json` (opt-in — executes project code). |
+| `ai-dev-project-rules . [--update] [--force]` | Rules only. |
 
-All three (and `ai-dev`) accept an optional project path argument, defaulting to `.`.
+## Versioning and auto-update
 
-Seeding records a hash of every rule it writes in `.cursor/rules/.seed-manifest.json`, so `update` can tell an untouched stale copy (safe to refresh) from one the project customized (kept). Projects seeded before this manifest existed report all differing rules as "kept" on the first `update`; run once with `--force` if those copies were never customized.
+Two version numbers, never conflated:
+- **Kit version** (`VERSION`, e.g. `1.4.0`) — stamped into each project at `.ai/kit-version` after a
+  successful run. **Commit this file.** When the installed kit is newer than the stamp, plain
+  `ai-dev .` automatically runs the update pipeline; when the stamp is newer (a teammate ran a newer
+  kit), it never downgrades and prints a note to upgrade.
+- **Index format version** (inside `manifest.json`) — a mismatch just rebuilds the index cache.
 
-## What happens inside every project
+**Managed blocks.** Kit content in `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, and
+`.specify/memory/project-index.md` lives between `<!-- ai-dev-kit:begin -->` / `<!-- ai-dev-kit:end -->`
+markers. Updates rewrite only the block; **everything you add outside the markers is yours forever**.
+Files from pre-1.4 kits are migrated automatically: pristine copies are replaced, edited ones get the
+block appended below your content with a printed notice.
 
-At the start of a task, the global instructions tell every connected AI tool to run:
-
-```bash
-ai-dev .
-```
-
-You can also run it manually, once, in any project:
-
-```bash
-cd /path/to/project
-ai-dev .
-```
-
-Every underlying step is safe to re-run as often as you like — nothing it writes is ever silently
-overwritten once it exists, and the index/rules generation only touches what actually changed.
+**Rules.** Seeded rules are tracked by content hash in `.cursor/rules/.seed-manifest.json`. Updates
+refresh copies you never edited, keep and list the ones you did (`kept:`), and prune rules the kit
+retired (only when still pristine). `--force` overrides.
 
 ## The Project Intelligence Index
 
@@ -94,153 +91,126 @@ overwritten once it exists, and the index/rules generation only touches what act
 
 ```text
 .ai/project-index/
-├── PROJECT_MAP.md     # tier-1 read: stack, domains, entry points, key files per domain, code legend
-├── DOMAINS/            # tier-2 read: one markdown file per discovered domain/module
-├── SYMBOLS.jsonl       # one compact JSON record per file — grep a single line for exact lookups
-├── ROUTES.md           # on demand: method, URI, handler, defining file
-├── RELATIONS.md        # on demand: project-internal imports, Eloquent relations, database tables
+├── PROJECT_MAP.md     # tier-1 read: stack, domains, entry points, quality gates, key files, legend
+├── DOMAINS/            # tier-2 read: one markdown file per discovered domain/module (capped rows)
+├── SYMBOLS.jsonl       # one compact JSON record per file — line numbers, owning class, attributes
+├── ROUTES.md           # on demand: method, URI, name, handler (static parse or --runtime artisan)
+├── SCHEMA.md           # on demand: database schema folded from migrations
+├── FRAMEWORK.md        # on demand: events→listeners, policies/gates, queues, schedule
+├── HOOKS.md            # on demand (WordPress): actions/filters/shortcodes/REST/CPTs — REST routes
+│                       #   without permission_callback are flagged for audit
+├── RELATIONS.md        # on demand: project-internal imports, Eloquent/Doctrine relations, tables
 ├── FILES.md            # on demand: compact path → domain inventory
-└── manifest.json       # per-file SHA-256 hashes, used for incremental updates
+├── last-run.json       # what changed since the previous index run (ai-dev query changed)
+└── manifest.json       # per-file SHA-256 hashes + the detected stack object
 ```
 
-For each relevant source file it captures:
-- the file's path, language, namespace, and inferred **responsibility** (controller, policy, migration,
-  service, job, React page/component/hook, test, etc.);
-- classes, interfaces, traits, enums, functions, methods, and React components/hooks;
-- imports/dependencies;
-- routes defined in the file, and Eloquent relations/tables it references;
-- the domain/module it belongs to (inferred from Laravel `app/Domain(s)`/`Modules` conventions, or
-  `resources/js/{pages,features,modules}` on the frontend).
+**Stack detection** (persisted in `manifest.json["stack"]`, printable via `--print-stack`): Laravel,
+Livewire, Filament, Horizon, Inertia, Blade, Sanctum/Passport, tenancy packages, Symfony, WordPress
+(site / plugin repo / theme repo, block themes, WooCommerce), Pest/PHPUnit, PHPStan/Larastan/Psalm,
+Pint/PHP-CS-Fixer, composer scripts, PSR-4 roots.
 
-**Incremental by design.** Each file's SHA-256 hash is stored in `manifest.json`; on the next run, any
-file whose hash hasn't changed is reused from the previous index instead of being re-parsed. This keeps
-the index cheap to refresh even on large codebases. The directory walk itself also skips `vendor/`,
-`node_modules/`, `.git/`, build/cache output, etc. *during* traversal (not after), so those directories
-are never even opened.
+**Incremental by design.** SHA-256 per file; unchanged files are reused, ignored directories
+(`vendor/`, `node_modules/` — at any depth — `.git/`, WP core, build output) are pruned during the
+walk. **Deterministic output**: no timestamps, no machine paths — safe to commit and share.
 
-**Deterministic output.** The index contains no timestamps, no git metadata (branch/commit/changed
-files), and no absolute machine-specific paths — re-running it against unchanged source produces
-byte-identical files regardless of who generated it or where the project lives on disk, so committing
-the index folder to your repo and sharing it across a team doesn't create noise or merge conflicts on
-every regeneration.
+Full rebuild: `ai-dev-project-index . --full`.
 
-Full rebuild (ignores the manifest and re-parses every file):
+## `ai-dev query` — tier-0 lookups
+
+One cheap command instead of a read chain:
 
 ```bash
-ai-dev-project-index . --full
+ai-dev query symbol UserController      # path:line, kind, visibility, owning class, attributes
+ai-dev query symbol "OrderTable::refund"
+ai-dev query route orders               # matching routes with names and handlers
+ai-dev query hook rest                  # WordPress hooks/CPTs/REST routes
+ai-dev query file app/Models/Order.php  # one file's full brief (symbols, relations, tests)
+ai-dev query domain Billing             # key files, routes, tables, tests of one domain
+ai-dev query table orders               # columns (from migrations) + files touching the table
+ai-dev query env STRIPE_KEY             # files using an env/config key
+ai-dev query changed                    # files changed since the last index run
+ai-dev query map                        # stack + domains, ultra-compact
 ```
 
-## Tool integration
-
-`ai-dev .` (or `ai-dev-init .` alone) creates these adapter files inside the project:
-
-```text
-.cursor/rules/00-project-index-first.mdc
-.github/copilot-instructions.md
-CLAUDE.md
-AGENTS.md
-.specify/memory/project-index.md
-```
-
-Each one tells its respective tool the same thing: check the index before broad exploration, read it
-**tiered** — `PROJECT_MAP.md` first (often enough on its own), then only the relevant domain map, then
-single-line greps into `SYMBOLS.jsonl` for exact lookups — open real source files only when the index
-is missing, stale, uncertain, sensitive, or about to be modified, and refresh the index after making
-changes. So the same workflow works across:
-
-- Cursor
-- VS Code + GitHub Copilot
-- Claude Code
-- Any agent runner that reads `AGENTS.md`
-- Specify/spec-kit, via `.specify/memory/project-index.md`
-
-None of these files are ever overwritten once created — if you or your team customize them, those edits
-survive every future `ai-dev` run.
+All subcommands accept `--json`, `--limit N`, `--project PATH`. Query never writes anything.
 
 ## Mandatory agent behavior
 
 Every agent working in a project is expected to:
 
-1. Run `ai-dev .`.
-2. Read `PROJECT_MAP.md`, then only the relevant `DOMAINS/*.md` — stop as soon as the work is located.
-3. Grep single lines from `SYMBOLS.jsonl` for exact class/method/route lookups instead of re-reading source.
-4. Use the index to narrow down to the smallest relevant set of files.
-5. Open the real source when the index data is missing, stale, or sensitive.
-6. Refresh the index after making changes.
+1. Run `ai-dev .` (also applies pending kit updates).
+2. Try `ai-dev query` for exact lookups (tier 0).
+3. Read `PROJECT_MAP.md`, then only the relevant `DOMAINS/*.md` — stop as soon as the work is located.
+4. Grep single lines from `SYMBOLS.jsonl` when query is not enough — never read it whole.
+5. Open `ROUTES.md`/`SCHEMA.md`/`FRAMEWORK.md`/`HOOKS.md`/`RELATIONS.md`/`FILES.md` on demand only.
+6. Open the real source when the index data is missing, stale, or sensitive; refresh after changes.
 
-The index is explicitly **not** treated as authoritative for security, payments, authorization, tenancy,
-concurrency, migrations, destructive operations, or production incidents — those always require reading
-the real source.
+The index is explicitly **not** authoritative for security, payments, authorization, tenancy,
+concurrency, migrations, destructive operations, or production incidents.
 
 ## Automatic project rule generation
 
-`ai-dev-project-rules` creates and maintains project-specific Cursor rules under `.cursor/rules/`:
+`ai-dev-project-rules` seeds and maintains `.cursor/rules/`, gated by the detected stack — only the
+categories a project actually needs are created (a WordPress plugin gets zero Laravel rules):
 
 ```text
-.cursor/rules/
-├── 00-core/              # index-first + rule-maintenance workflow, curated operating principles
-├── 05-project-bootstrap/ # new-project stack defaults
-├── 10-laravel/           # curated, seeded only when `artisan` is present
-├── 15-inertia-react/     # curated, seeded only when `resources/js` is present
-├── 16-blade/             # curated, seeded only when `resources/views` is present
-├── 20-database/          # curated, seeded only when `artisan` is present
-├── 30-api/               # curated API design conventions
-├── 40-security/          # curated secure-by-default baseline (always seeded)
-├── 50-performance/       # curated runtime/caching/Octane rules (Laravel projects)
-├── 60-testing/           # curated testing conventions
-├── 65-domain/            # generated per-domain overview, one folder per discovered domain
-├── 70-workflows/         # reserved scaffold for future dynamic workflow rules
-├── 75-review/            # curated review protocol
-└── 90-project/           # curated project-context placeholder
+00-core/              # always: navigation (index-first + query), operating principles, router, maintenance
+05-project-bootstrap/ # new projects & Laravel: stack decision workflow (loads only when bootstrapping)
+10-laravel/           # Laravel: architecture, controllers, services, models, validation, jobs,
+                      #   queues/Horizon, multi-tenancy (gated on tenancy packages)
+11-php/               # any Composer project: modern PHP, PSR-4, dependency injection
+12-php-tooling/       # any Composer project: quality gates; static-analysis & formatting (tool-gated)
+15-inertia-react/     # Inertia detected: architecture, React+TS, UI state/performance
+16-blade/             # Blade + Laravel: architecture, components/forms, view performance
+17-livewire/          # Livewire: architecture, security (#[Locked], per-action authz), performance
+18-filament/          # Filament: resources, authorization/tenancy, performance
+20-database/          # query performance, transactions, migrations (Laravel) / non-Eloquent (others)
+25-wordpress/         # WordPress: architecture, security, data/performance, REST/AJAX, frontend/assets
+26-woocommerce/       # WooCommerce: HPOS-safe orders, gateways, state machine
+30-api/               # Laravel: API design; Sanctum/Passport (package-gated)
+40-security/          # always: secure-by-default baseline + scoped deep-dive rules
+50-performance/       # Laravel: runtime/caching/Octane
+60-testing/           # always: testing conventions; Pest/PHPUnit variant (runner-gated)
+65-domain/            # generated per-domain overview, one folder per discovered domain
+75-review/            # review protocol
 ```
 
-**Seeding.** On first run, each category is seeded from a curated template library at
-`source/project-rules-optional/default/` (installed to
-`~/.local/share/ai-dev-kit/project-rules-optional/`), gated by the detected stack — Laravel-specific
-categories only seed when `artisan` is present, the Inertia/React category only when `resources/js` is
-present, the Blade category only when `resources/views` is present (both can seed together on a project
-that mixes the two), and security/core/api/testing/review/project categories always seed. The frontend
-stack itself is never assumed for a new project — see the `05-project-bootstrap` category, which decides
-Blade vs Inertia + React from the request or existing convention instead of defaulting to either. Seeding
-only ever writes files that don't already exist yet.
+Seeding only ever writes files that don't exist yet; from then on updates flow through the hash
+manifest (see Versioning). Beyond the seed, agents evolve rules dynamically from the index — creating,
+splitting, and pruning rules as the codebase changes.
 
-**Ownership.** Once a rule exists inside a project, it belongs to that project. From then on it's
-edited, split, or removed by the dynamic maintenance flow below — never silently overwritten by a
-re-run of `ai-dev-project-rules`.
+## Spec-lite for large features
 
-**Beyond the initial seed**, the system does not use a fixed table mapping file types to rule files.
-Instead, on every run it:
-- inspects changed files and indexed symbols;
-- determines the affected architecture and business concepts;
-- updates the smallest matching rules;
-- creates new rules when none exist yet;
-- splits large rules by domain/module/app/route group/workflow;
-- removes stale references after deletes and renames.
+```bash
+ai-dev spec payment-refunds
+```
 
-Agents are instructed to run this automatically, so normal use never requires typing
-`ai-dev-project-rules` by hand.
+scaffolds `.ai/specs/001-payment-refunds/{spec.md,plan.md,tasks.md}`: `[NEEDS CLARIFICATION: …]`
+markers force unknowns into one batched question round instead of silent assumptions; plan gates
+check simplicity and framework-direct usage; tasks use the `[ID] [P] [Story]` grammar with exact
+file paths and a blocking Foundational phase. Reserved for Tier L/XL work — small fixes skip it.
 
 ## Agents & skills
 
-20 specialized agents cover: task routing, Laravel architecture, backend/frontend/database/security
-engineering, testing, code review, production incidents, new-project bootstrap, the project
-intelligence/rule maintenance system itself, and a scaled team hierarchy (`cto`, `team-lead`,
-`team-frontend-developer`, `team-backend-developer`, `team-tester`, `team-ui-ux-reviewer`) for large,
-multi-workstream backlogs.
+21 agents: task routing, Laravel architecture, backend/frontend/database/security engineering,
+**WordPress engineering**, testing, code review, production incidents, new-project bootstrap, project
+intelligence/rule maintenance, and a scaled team hierarchy (`cto`, `team-lead`,
+`team-frontend-developer`, `team-backend-developer`, `team-tester`, `team-ui-ux-reviewer`).
 
-27 skills cover the concrete day-to-day workflow: bootstrapping a new Laravel project (Blade or Inertia +
-React, decided per request), building APIs, Blade views, and Inertia pages, designing databases and
-migrations, authorizing resources, handling webhooks and payments, investigating N+1 queries, optimizing
-queries, writing tests, preparing pull requests and releases, security audits, keeping the project index
-and rules in sync, auditing frontend UI/UX and Lighthouse scores (`review-frontend-ux`), and standing up a
-scaled team (`run-project-team`) for large task lists.
+30 skills, including: bootstrapping Laravel apps (Blade or Inertia decided per request), building
+APIs, Blade views, Inertia pages, **Livewire components, Filament resources, WordPress plugins and
+blocks**, designing databases and migrations, authorizing resources, webhooks and payment flows,
+query optimization, writing tests, **setting up quality tooling (Pint/PHPStan/Pest with copyable
+config assets)**, security audits (with a WordPress-specific audit loop), pull requests, releases,
+frontend UI/UX review, project index/rule sync, and standing up a scaled team.
 
-## Health check
+Several skills ship `assets/` — real files (plugin boilerplate, `pint.json`, `phpstan.neon`) that are
+**copied, not generated**: zero tokens, zero drift.
 
-```bash
-./doctor.sh
-```
+## Kit development
 
-Verifies that the agent/skill symlinks in `~/.cursor/agents` and `~/.cursor/skills` aren't broken, and
-that all four commands (`ai-dev`, `ai-dev-init`, `ai-dev-project-index`, `ai-dev-project-rules`) resolve
-on `PATH`.
+- `tools/measure-context.py [project|--templates]` — always-on token measurement with a budget gate.
+- `tools/lint_kit.py` — frontmatter validity, skill name↔directory identity, trigger-style
+  descriptions, dangling skill/agent references.
+- Both run inside `./doctor.sh`.

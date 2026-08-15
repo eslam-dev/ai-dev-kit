@@ -1,0 +1,15 @@
+---
+description: Writing or modifying tests in a project using the Pest testing framework
+globs: "tests/**/*.php"
+alwaysApply: false
+---
+# Pest
+- Use Pest syntax throughout: `it()`/`test()` closures with `expect()` assertions; no PHPUnit class boilerplate in a Pest suite.
+- Name tests as behavior sentences: `it('rejects expired tokens')`, not method-style names.
+- Use datasets (`->with([...])`) for case matrices instead of duplicated test bodies; name dataset cases for readable failures.
+- Use `beforeEach()`/`afterEach()` over `setUp()`/`tearDown()`; share suite-wide bindings via `Pest.php` (`uses()->group()`, traits, base TestCase).
+- Enforce layer rules with architecture tests: `arch()` presets and expectations (no `dd`/`dump`, controllers don't touch models directly, domain doesn't depend on HTTP).
+- Test Livewire components with `Livewire::test()` — assert `set`/`call`/`assertSet`/`assertSee`/`assertDispatched`, not rendered-page scraping.
+- Chain expectations on one `expect()` where they describe one subject; use higher-order expectations (`->each`, `->toHaveCount`) over manual loops.
+- Prefer `RefreshDatabase` via `uses()` in `Pest.php` over per-file traits.
+- Keep one behavior per test; split multi-assertion grab-bags.

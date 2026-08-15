@@ -1,6 +1,6 @@
 ---
 description: Blade view architecture and server-rendered page rules
-globs: "resources/views/**/*.blade.php,app/Http/**/*.php,routes/**/*.php"
+globs: "resources/views/**/*.blade.php"
 alwaysApply: false
 ---
 # Blade Architecture

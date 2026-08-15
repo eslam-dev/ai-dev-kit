@@ -1,0 +1,14 @@
+---
+description: Writing or optimizing Livewire components with queries, polling, heavy renders, or large state
+globs: "app/Livewire/**/*.php,app/Http/Livewire/**/*.php,resources/views/livewire/**/*.blade.php"
+alwaysApply: false
+---
+# Livewire Performance
+- `render()` runs on every interaction: audit every re-render path for N+1 — eager load in `render()` or computed properties, never rely on a one-time load in `mount()` for query-backed data.
+- Use `#[Computed]` for derived data — cached per request, not serialized into the payload; add `persist: true` only for genuinely expensive cross-request values.
+- Mark heavy components `#[Lazy]` with a meaningful `placeholder()` so initial page load skips their queries.
+- Budget polling: `wire:poll` cost = requests × interval × concurrent users. Use the longest viable interval, `wire:poll.visible`, and prefer events/broadcasting over polling for rare changes.
+- Keep public property payloads minimal — they serialize into every request/response round-trip. Store ids and scalars, not full models/collections; rehydrate via computed properties.
+- Never bind `.live` to inputs that trigger queries without debounce/throttle.
+- Paginate lists with `WithPagination`; never hold an unbounded collection in component state.
+- Prefer `wire:navigate` and skip re-rendering static subtrees with `wire:ignore` where safe.

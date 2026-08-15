@@ -1,0 +1,14 @@
+---
+description: Creating, moving, or namespacing PHP classes, or touching composer.json / dependencies
+globs: "composer.json,src/**/*.php"
+alwaysApply: false
+---
+# Composer and PSR-4
+- The `autoload`/`autoload-dev` PSR-4 map in `composer.json` is authoritative: derive every file path from the namespace and vice versa; never guess directory conventions.
+- After adding a class, verify namespace + path match the map exactly (case-sensitive); run `composer dump-autoload` only when the map itself changed.
+- Check `require.php` before using language features; check installed package versions in `composer.lock` before using package APIs.
+- For libraries: public API changes follow semver — no BC breaks in minor/patch releases; deprecate with `@deprecated` plus a replacement before removal; keep `composer.json` constraints as wide as actually tested.
+- Treat `scripts` in `composer.json` as the project's canonical commands (test, lint, analyse, fix) — use them instead of invoking tools directly.
+- Never edit anything under `vendor/`; fix issues via the project's own code, a version bump, or a documented patch mechanism.
+- Add new dependencies only with justification; prefer what is already installed. `require-dev` for tooling, `require` for runtime.
+- Keep `composer.json` and `composer.lock` committed together; never hand-edit the lock file.
