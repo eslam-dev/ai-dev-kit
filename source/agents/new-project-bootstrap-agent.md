@@ -7,7 +7,7 @@ description: Creates new Laravel applications using the latest stable Laravel re
 You own the initial project creation workflow.
 
 ## Required behavior
-1. Read `.cursor/rules/05-project-bootstrap/00-new-project-stack.mdc`.
+1. Read `.ai/rules/05-project-bootstrap/00-new-project-stack.mdc`.
 2. Verify the latest stable Laravel version and requirements from official Laravel sources.
 3. Decide the frontend stack: explicit user request first, then existing project convention, then ask when genuinely ambiguous on a brand-new project. Never assume Blade or Inertia + React by default.
 4. Check the local runtime and package-manager versions.

@@ -1,18 +1,19 @@
 # AI Dev Kit — Project Index First
 
-AI Dev Kit is a global Cursor / Claude Code / VS Code (Copilot) toolkit built for PHP engineering —
+AI Dev Kit is a global, editor-agnostic AI coding toolkit built for PHP engineering —
 Laravel (Blade, Livewire, Inertia + React, Filament) first, WordPress/WooCommerce and generic
 modern PHP (Symfony, plain Composer) close behind. It installs once on your machine, then, for
 every project you work on, it:
 
 1. builds and maintains a persistent, local **Project Intelligence Index** describing the codebase
    (files, symbols with line numbers, routes, hooks, schema, relationships, domains);
-2. generates and maintains **project-specific Cursor rules** (security, performance, architecture,
-   testing, and more), seeded from a curated template library gated by the *detected stack* and
-   then evolved per project;
-3. wires the same workflow into whichever AI tool you're using — Cursor, VS Code + GitHub Copilot,
-   Claude Code, generic agent runners that read `AGENTS.md`, and Specify/spec-kit — so every tool
-   reads the same index and rules instead of re-discovering the codebase from scratch on every task;
+2. generates and maintains **project rules** in one shared place, `.ai/rules/` (security,
+   performance, architecture, testing, and more), seeded from a curated template library gated by
+   the *detected stack* and then evolved per project — **one rule set, never a copy per editor**;
+3. wires the same workflow into whichever AI tool you're using — Cursor, Kilo, Windsurf/Devin,
+   Claude Code, VS Code + GitHub Copilot, Antigravity, Roo, Cline, Continue, Trae, Junie, Zed,
+   Gemini CLI, Aider, any runner that reads `AGENTS.md`, and Specify/spec-kit — so every tool
+   reads the same index and the same rules instead of re-discovering the codebase on every task;
 4. **keeps itself up to date inside every project**: when you upgrade the kit, the next plain
    `ai-dev .` in any project automatically refreshes every kit-managed file, without ever touching
    your customizations.
@@ -62,6 +63,8 @@ token budget, and lints the kit's own content).
 | `ai-dev query <sub> <term>` | Side-effect-free exact lookups over the index (see below). |
 | `ai-dev spec <slug>` | Scaffolds `.ai/specs/NNN-slug/{spec,plan,tasks}.md` for large (Tier L/XL) features. |
 | `ai-dev update [--force] [projects...]` | Manual refresh of kit-managed files; `--force` also overwrites locally modified seeded rules. |
+| `ai-dev editors` | Lists every editor adapter the kit can seed. |
+| `ai-dev . --editors=kilo,windsurf` | Seeds those editors' adapters and remembers the choice in `.ai/editors`. `--all-editors` seeds them all. |
 | `ai-dev-init .` | Adapter scaffolding only. |
 | `ai-dev-project-index . [--full] [--runtime] [--print-stack]` | Index only. `--runtime` additionally runs `php artisan route:list --json` (opt-in — executes project code). |
 | `ai-dev-project-rules . [--update] [--force]` | Rules only. |
@@ -75,15 +78,62 @@ Two version numbers, never conflated:
   kit), it never downgrades and prints a note to upgrade.
 - **Index format version** (inside `manifest.json`) — a mismatch just rebuilds the index cache.
 
-**Managed blocks.** Kit content in `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, and
-`.specify/memory/project-index.md` lives between `<!-- ai-dev-kit:begin -->` / `<!-- ai-dev-kit:end -->`
+**Managed blocks.** Kit content in `AGENTS.md`, `CLAUDE.md`, and every editor adapter
+(`.kilo/rules/…`, `.windsurf/rules/…`, `.github/copilot-instructions.md`, …)
+lives between `<!-- ai-dev-kit:begin -->` / `<!-- ai-dev-kit:end -->`
 markers. Updates rewrite only the block; **everything you add outside the markers is yours forever**.
 Files from pre-1.4 kits are migrated automatically: pristine copies are replaced, edited ones get the
 block appended below your content with a printed notice.
 
-**Rules.** Seeded rules are tracked by content hash in `.cursor/rules/.seed-manifest.json`. Updates
+**Rules.** Seeded rules are tracked by content hash in `.ai/rules/.seed-manifest.json`. Updates
 refresh copies you never edited, keep and list the ones you did (`kept:`), and prune rules the kit
 retired (only when still pristine). `--force` overrides.
+
+## One rule set, every editor
+
+Rules live in exactly one place — **`.ai/rules/`** — and every tool reads that same set. Nothing is
+copied per editor, so a rule you edit is a rule every agent sees.
+
+- **Cursor** gets `.cursor/rules` as a **symlink** to `../.ai/rules` (it is the one tool that
+  auto-loads a directory of `.mdc` files). Projects from kit ≤1.5 are migrated on the next
+  `ai-dev .`: existing files move into `.ai/rules/` — your own and your edited ones included — and
+  `.cursor/rules` becomes the symlink.
+- **Every other editor** gets one small adapter file inside its own rules folder pointing at
+  `AGENTS.md` and `.ai/rules/`. That file carries a managed block, so anything you add outside the
+  markers is preserved.
+
+Adapters are seeded for editors the project already uses (detected from their config directory).
+Add more explicitly, once — the choice is remembered in `.ai/editors`:
+
+```bash
+ai-dev . --editors=kilo,windsurf     # or --all-editors
+ai-dev editors                       # list every supported adapter
+```
+
+| Editor | Adapter | Detected via |
+|---|---|---|
+| Kilo Code | `.kilo/rules/00-ai-dev-kit.md` (+ `kilo.jsonc` `instructions`) | `.kilo/`, `kilo.jsonc` |
+| Kilo Code (legacy) | `.kilocode/rules/00-ai-dev-kit.md` | `.kilocode/` |
+| Windsurf | `.windsurf/rules/ai-dev-kit.md` | `.windsurf/`, `.windsurfrules` |
+| Devin Desktop | `.devin/rules/ai-dev-kit.md` | `.devin/` |
+| Antigravity | `.agents/rules/ai-dev-kit.md` | `.agents/`, `.agent/` |
+| Roo Code | `.roo/rules/00-ai-dev-kit.md` | `.roo/`, `.roorules` |
+| Cline | `.clinerules/00-ai-dev-kit.md` (or the single `.clinerules` file) | `.clinerules` |
+| Continue | `.continue/rules/ai-dev-kit.md` | `.continue/` |
+| Trae | `.trae/rules/project_rules.md` | `.trae/` |
+| Junie (JetBrains) | `.junie/guidelines.md` | `.junie/` |
+| Zed | `.rules` | `.zed/`, `.rules` |
+| Gemini CLI | `GEMINI.md` | `.gemini/`, `GEMINI.md` |
+| Aider | `CONVENTIONS.md` | `.aider.conf.yml` |
+| VS Code / Copilot | `.github/copilot-instructions.md` | `.github/` |
+| Specify / spec-kit | `.specify/memory/project-index.md` | `.specify/` |
+
+`AGENTS.md` (the canonical protocol) and `CLAUDE.md` are always written, which already covers Claude
+Code, Codex, Amp, Jules, and anything else that reads `AGENTS.md`.
+
+Because rules now live under `.ai/`, keep that directory in version control — ignore
+`.ai/project-index/` specifically rather than all of `.ai/`. `ai-dev` warns if your `.gitignore`
+excludes `.ai/`.
 
 ## The Project Intelligence Index
 
@@ -180,7 +230,7 @@ concurrency, migrations, destructive operations, or production incidents.
 
 ## Automatic project rule generation
 
-`ai-dev-project-rules` seeds and maintains `.cursor/rules/`, gated by the detected stack — only the
+`ai-dev-project-rules` seeds and maintains `.ai/rules/`, gated by the detected stack — only the
 categories a project actually needs are created (a WordPress plugin gets zero Laravel rules):
 
 ```text

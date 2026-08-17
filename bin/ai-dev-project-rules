@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -167,7 +168,7 @@ def get_stack(root: Path, index: Path) -> dict:
 
 
 def template_map(root: Path, stack: dict) -> dict[str, str]:
-    """All template files that apply to this project: {dest relpath under .cursor/rules: content}."""
+    """All template files that apply to this project: {dest relpath under .ai/rules: content}."""
     result = dict(BASE_RULES)
     template_root = find_template_root()
     if template_root is None:
@@ -303,6 +304,55 @@ def project_domains(index: Path) -> set[str]:
         pass
     return domains
 
+def gitignores_ai_dir(root: Path) -> bool:
+    """True when .gitignore excludes the whole .ai/ directory.
+
+    Rules moved into .ai/rules/ in kit 1.6.0; a project that ignored .ai/ only
+    to keep the generated index out of git would silently stop tracking them.
+    """
+    path = root / ".gitignore"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    return any(line.strip().rstrip("/") == ".ai" for line in lines)
+
+CURSOR_LINK_TARGET = "../.ai/rules"
+
+def link_cursor_rules(root: Path, rules: Path) -> int:
+    """Make `.cursor/rules` a symlink to the canonical `.ai/rules`.
+
+    Rules live in exactly one place so every editor reads the same set. Cursor
+    is the one tool that auto-loads a directory of `.mdc` files, so it gets a
+    symlink rather than a copy; pre-1.6 projects with a real `.cursor/rules`
+    directory have their files moved across first (existing `.ai/rules` files
+    win, so a re-run never clobbers the canonical copy). Returns how many files
+    were migrated.
+    """
+    legacy = root / ".cursor/rules"
+    moved = 0
+    if legacy.is_symlink():
+        return 0
+    if legacy.is_dir():
+        for src in sorted(legacy.rglob("*")):
+            if not src.is_file():
+                continue
+            dest = rules / src.relative_to(legacy)
+            if dest.exists():
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(dest))
+            moved += 1
+        shutil.rmtree(legacy)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        legacy.symlink_to(CURSOR_LINK_TARGET, target_is_directory=True)
+    except OSError:
+        # Filesystem without symlink support: leave the canonical dir alone and
+        # let the adapters point at it.
+        pass
+    return moved
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("project", nargs="?", default=".")
@@ -313,10 +363,11 @@ def main() -> None:
     args = parser.parse_args()
 
     root = Path(args.project).resolve()
-    rules = root / ".cursor/rules"
+    rules = root / ".ai/rules"
     index = root / ".ai/project-index"
 
     rules.mkdir(parents=True, exist_ok=True)
+    moved = link_cursor_rules(root, rules)
 
     stack = get_stack(root, index)
     seeded, updated, skipped, pruned = sync_templates(rules, root, stack, args.update, args.force)
@@ -352,7 +403,12 @@ Do not turn this file into a complete file inventory.
                 encoding="utf-8",
             )
 
-    print(f"Project rules initialized: {rules}")
+    print(f"Project rules initialized: {rules} (shared by every editor)")
+    if gitignores_ai_dir(root):
+        print("  warning: .gitignore excludes .ai/ — your project rules would not be committed;"
+              " ignore .ai/project-index/ instead")
+    if moved:
+        print(f"  migrated {moved} rule(s) from .cursor/rules -> .ai/rules (.cursor/rules is now a symlink)")
     line = f"Seeded: {seeded} | domains: {len(domains)}"
     if args.update:
         line += f" | updated: {updated} | pruned: {len(pruned)} | kept (locally modified): {len(skipped)}"

@@ -130,12 +130,14 @@ check "Locked attr captured"                    "grep -q '\"attrs\":\\[\"Locked\
 check "tested_by mapping"                       "grep -q 'tested_by' '$IDX/SYMBOLS.jsonl'"
 check "kit-version stamped"                     "test -f '$L/.ai/kit-version'"
 check "adapters carry managed blocks"           "grep -q 'ai-dev-kit:begin' '$L/AGENTS.md' && grep -q 'ai-dev-kit:begin' '$L/CLAUDE.md'"
-check "livewire rules seeded"                   "test -f '$L/.cursor/rules/17-livewire/10-livewire-security.mdc'"
-check "filament rules seeded"                   "test -f '$L/.cursor/rules/18-filament/10-filament-authorization-tenancy.mdc'"
-check "sanctum rule seeded, passport not"       "test -f '$L/.cursor/rules/30-api/10-sanctum.mdc' && test ! -f '$L/.cursor/rules/30-api/20-passport.mdc'"
-check "pest variant seeded, phpunit not"        "test -f '$L/.cursor/rules/60-testing/10-pest.mdc' && test ! -f '$L/.cursor/rules/60-testing/20-phpunit.mdc'"
-check "no wordpress rules"                      "test ! -d '$L/.cursor/rules/25-wordpress'"
-check "no inertia rules (not detected)"         "test ! -d '$L/.cursor/rules/15-inertia-react'"
+check "livewire rules seeded"                   "test -f '$L/.ai/rules/17-livewire/10-livewire-security.mdc'"
+check "filament rules seeded"                   "test -f '$L/.ai/rules/18-filament/10-filament-authorization-tenancy.mdc'"
+check "sanctum rule seeded, passport not"       "test -f '$L/.ai/rules/30-api/10-sanctum.mdc' && test ! -f '$L/.ai/rules/30-api/20-passport.mdc'"
+check "pest variant seeded, phpunit not"        "test -f '$L/.ai/rules/60-testing/10-pest.mdc' && test ! -f '$L/.ai/rules/60-testing/20-phpunit.mdc'"
+check "no wordpress rules"                      "test ! -d '$L/.ai/rules/25-wordpress'"
+check "no inertia rules (not detected)"         "test ! -d '$L/.ai/rules/15-inertia-react'"
+check "cursor rules is a symlink to .ai/rules"  "test -L '$L/.cursor/rules' && test -f '$L/.cursor/rules/00-core/project-navigation.mdc'"
+check "adapters point at the shared rule set"   "grep -q '.ai/rules/' '$L/AGENTS.md' && grep -q '.ai/rules/' '$L/CLAUDE.md'"
 check "query symbol with line+owner"            "(cd '$L' && python3 '$BIN/ai-dev-query' symbol refund | grep -q 'OrderController)')"
 check "query table columns"                     "(cd '$L' && python3 '$BIN/ai-dev-query' table orders | grep -q 'status:string')"
 
@@ -150,9 +152,9 @@ else
 fi
 
 # customized rule survives update
-echo "PROJECT CUSTOM" >> "$L/.cursor/rules/40-security/00-security.mdc"
+echo "PROJECT CUSTOM" >> "$L/.ai/rules/40-security/00-security.mdc"
 (cd "$L" && "$BIN/ai-dev" update . >/dev/null 2>&1)
-check "customized rule kept on update"          "grep -q 'PROJECT CUSTOM' '$L/.cursor/rules/40-security/00-security.mdc'"
+check "customized rule kept on update"          "grep -q 'PROJECT CUSTOM' '$L/.ai/rules/40-security/00-security.mdc'"
 
 # user content outside managed block survives
 printf '\nMY PROJECT NOTES\n' >> "$L/AGENTS.md"
@@ -195,10 +197,10 @@ check "REST callback resolved (not methods)"    "grep -q 'mse_orders' '$IDX/HOOK
 check "missing permission_callback flagged"     "grep -q 'NO permission_callback' '$IDX/HOOKS.md'"
 check "permission_callback present not flagged" "grep 'mse_status' '$IDX/HOOKS.md' | grep -vq 'NO permission_callback'"
 check "CPT + lifecycle rows"                    "grep -q 'CPT' '$IDX/HOOKS.md' && grep -q 'ACTIVATION' '$IDX/HOOKS.md'"
-check "wordpress rules seeded"                  "test -f '$W/.cursor/rules/25-wordpress/10-wp-security.mdc'"
-check "zero laravel rules"                      "test ! -d '$W/.cursor/rules/10-laravel' && test ! -d '$W/.cursor/rules/16-blade' && test ! -d '$W/.cursor/rules/50-performance'"
-check "no woocommerce rules (not detected)"     "test ! -d '$W/.cursor/rules/26-woocommerce'"
-check "no empty category dirs"                  "test -z \"\$(find '$W/.cursor/rules' -type d -empty)\""
+check "wordpress rules seeded"                  "test -f '$W/.ai/rules/25-wordpress/10-wp-security.mdc'"
+check "zero laravel rules"                      "test ! -d '$W/.ai/rules/10-laravel' && test ! -d '$W/.ai/rules/16-blade' && test ! -d '$W/.ai/rules/50-performance'"
+check "no woocommerce rules (not detected)"     "test ! -d '$W/.ai/rules/26-woocommerce'"
+check "no empty category dirs"                  "test -z \"\$(find '$W/.ai/rules' -type d -empty)\""
 check "query hook finds unprotected REST"       "(cd '$W' && python3 '$BIN/ai-dev-query' hook 'NO permission' | grep -q 'mse/v1/orders')"
 
 # ---------------------------------------------------------------- composer --
@@ -220,10 +222,10 @@ echo "== composer/symfony fixture"
 run_pipeline "$C"
 check "symfony detected"                        "grep -q '\"symfony\": true' '$C/.ai/project-index/manifest.json'"
 check "psr-4 domain from src/"                  "(cd '$C' && python3 '$BIN/ai-dev-query' map | grep -q 'Billing')"
-check "generic php rules seeded"                "test -f '$C/.cursor/rules/11-php/00-modern-php.mdc' && test -f '$C/.cursor/rules/12-php-tooling/10-static-analysis.mdc'"
-check "non-eloquent db rule, no laravel db"     "test -f '$C/.cursor/rules/20-database/30-non-eloquent-database.mdc' && test ! -f '$C/.cursor/rules/20-database/00-query-performance.mdc'"
-check "phpunit variant seeded"                  "test -f '$C/.cursor/rules/60-testing/20-phpunit.mdc' && test ! -f '$C/.cursor/rules/60-testing/10-pest.mdc'"
-check "no laravel/wp/livewire rules"            "test ! -d '$C/.cursor/rules/10-laravel' && test ! -d '$C/.cursor/rules/25-wordpress' && test ! -d '$C/.cursor/rules/17-livewire'"
+check "generic php rules seeded"                "test -f '$C/.ai/rules/11-php/00-modern-php.mdc' && test -f '$C/.ai/rules/12-php-tooling/10-static-analysis.mdc'"
+check "non-eloquent db rule, no laravel db"     "test -f '$C/.ai/rules/20-database/30-non-eloquent-database.mdc' && test ! -f '$C/.ai/rules/20-database/00-query-performance.mdc'"
+check "phpunit variant seeded"                  "test -f '$C/.ai/rules/60-testing/20-phpunit.mdc' && test ! -f '$C/.ai/rules/60-testing/10-pest.mdc'"
+check "no laravel/wp/livewire rules"            "test ! -d '$C/.ai/rules/10-laravel' && test ! -d '$C/.ai/rules/25-wordpress' && test ! -d '$C/.ai/rules/17-livewire'"
 
 # ------------------------------------------------------- declaration layer --
 D="$WORK/decl"
@@ -296,6 +298,28 @@ check "snippet is a small fraction of a big file" "test $SNIP_BYTES -lt $((BIG_B
 printf '      big class %s B (~%s tok) | read_symbol %s B (~%s tok) | list_api %s B (~%s tok)\n' \
   "$BIG_BYTES" "$((BIG_BYTES/4))" "$SNIP_BYTES" "$((SNIP_BYTES/4))" "$API_BYTES" "$((API_BYTES/4))"
 
+# ---------------------------------------------------------- editor adapters -
+echo "== editor adapters"
+E="$WORK/editors"
+mkdir -p "$E/.windsurf" "$E/.kilocode"
+printf 'MY CLINE RULES\n' > "$E/.clinerules"
+(cd "$E" && "$BIN/ai-dev-init" . --update >/dev/null)
+check "detected editor adapters seeded"         "test -f '$E/.windsurf/rules/ai-dev-kit.md' && test -f '$E/.kilocode/rules/00-ai-dev-kit.md'"
+check "undetected editors left alone"           "test ! -e '$E/.roo' && test ! -e '$E/.trae' && test ! -e '$E/GEMINI.md'"
+check "windsurf adapter keeps frontmatter first" "head -1 '$E/.windsurf/rules/ai-dev-kit.md' | grep -q -- '---'"
+check "single-file .clinerules kept as a file"  "test -f '$E/.clinerules' && grep -q 'MY CLINE RULES' '$E/.clinerules' && grep -q 'ai-dev-kit:begin' '$E/.clinerules'"
+check "adapters point at the shared rule set"   "grep -q '.ai/rules/' '$E/.windsurf/rules/ai-dev-kit.md'"
+
+(cd "$E" && "$BIN/ai-dev-init" . --editors=kilo,zed,bogus >/dev/null 2>&1)
+check "explicit editors seeded"                 "test -f '$E/.kilo/rules/00-ai-dev-kit.md' && test -f '$E/.rules'"
+check "kilo.jsonc wires the rules glob"         "grep -q '.kilo/rules/\*.md' '$E/kilo.jsonc'"
+check "choice remembered in .ai/editors"        "grep -qx 'kilo' '$E/.ai/editors' && grep -qx 'zed' '$E/.ai/editors' && ! grep -qx 'bogus' '$E/.ai/editors'"
+
+printf '\nMY OWN NOTE\n' >> "$E/.kilo/rules/00-ai-dev-kit.md"
+(cd "$E" && "$BIN/ai-dev-init" . --update >/dev/null)
+check "adapter customization survives update"   "grep -q 'MY OWN NOTE' '$E/.kilo/rules/00-ai-dev-kit.md' && test \"\$(grep -c 'ai-dev-kit:begin' '$E/.kilo/rules/00-ai-dev-kit.md')\" -eq 1"
+check "--list-editors lists kilo and windsurf"  "'$BIN/ai-dev-init' --list-editors | grep -q kilo && '$BIN/ai-dev-init' --list-editors | grep -q windsurf"
+
 # ------------------------------------------------------------- MCP server ---
 echo "== MCP server"
 MCP_OUT="$WORK/mcp.out"
@@ -324,7 +348,7 @@ if git -C "$ROOT" rev-parse --verify c3d15ac >/dev/null 2>&1; then
   run_pipeline "$G"
   check "pristine adapter replaced with block"  "grep -q 'ai-dev-kit:begin' '$G/AGENTS.md' && ! grep -q 'USER EDIT' '$G/AGENTS.md'"
   check "edited adapter keeps user content"     "grep -q 'USER EDIT' '$G/CLAUDE.md' && grep -q 'ai-dev-kit:begin' '$G/CLAUDE.md'"
-  check "legacy index-first mdc removed"        "test ! -f '$G/.cursor/rules/00-project-index-first.mdc'"
+  check "legacy index-first mdc removed"        "test ! -f '$G/.ai/rules/00-project-index-first.mdc'"
 else
   echo "== legacy migration fixture skipped (no git history)"
 fi

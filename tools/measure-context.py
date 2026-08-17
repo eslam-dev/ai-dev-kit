@@ -8,7 +8,7 @@ Usage:
 
 Reports bytes and estimated tokens (bytes/4) for:
   - every alwaysApply: true rule (always in context);
-  - the adapter files (CLAUDE.md, AGENTS.md, copilot-instructions.md);
+  - the adapter files (AGENTS.md, CLAUDE.md, and every editor adapter);
   - rules whose globs attach to a sample file edit.
 Exits 1 when the always-on estimate exceeds the budget (default 2000 tokens).
 """
@@ -20,7 +20,17 @@ import sys
 from pathlib import Path
 
 BUDGET_TOKENS = 2000
-ADAPTERS = ["CLAUDE.md", "AGENTS.md", ".github/copilot-instructions.md"]
+# Every adapter ai-dev-init can seed (see `ai-dev editors`). Missing ones are skipped.
+ADAPTERS = [
+    "AGENTS.md", "CLAUDE.md", "GEMINI.md", "CONVENTIONS.md", ".rules",
+    ".github/copilot-instructions.md", ".specify/memory/project-index.md",
+    ".kilo/rules/00-ai-dev-kit.md", ".kilocode/rules/00-ai-dev-kit.md",
+    ".windsurf/rules/ai-dev-kit.md", ".devin/rules/ai-dev-kit.md",
+    ".agents/rules/ai-dev-kit.md", ".roo/rules/00-ai-dev-kit.md",
+    ".clinerules", ".clinerules/00-ai-dev-kit.md",
+    ".continue/rules/ai-dev-kit.md", ".trae/rules/project_rules.md",
+    ".junie/guidelines.md",
+]
 
 
 def tokens(n_bytes: int) -> int:
@@ -89,12 +99,12 @@ def main() -> None:
     if args.templates is not None:
         base = Path(args.templates) if args.templates else \
             Path(__file__).resolve().parent.parent / "source" / "project-rules-optional" / "default"
-        adapters: list[Path] = []
+        adapters: list[tuple[Path, str]] = []
         label = f"templates: {base}"
     else:
         project = Path(args.project).resolve()
-        base = project / ".cursor" / "rules"
-        adapters = [project / a for a in ADAPTERS]
+        base = project / ".ai" / "rules"
+        adapters = [(project / a, a) for a in ADAPTERS]
         label = f"project: {project}"
 
     if not base.is_dir():
@@ -111,11 +121,11 @@ def main() -> None:
             always_bytes += size
             print(f"  {size:>6} B ~{tokens(size):>5} tok  {path.relative_to(base)}")
 
-    for adapter in adapters:
-        if adapter.exists():
+    for adapter, rel in adapters:
+        if adapter.is_file():
             size = len(adapter.read_bytes())
             adapter_bytes += size
-            print(f"  {size:>6} B ~{tokens(size):>5} tok  {adapter.name} (adapter, not budgeted)")
+            print(f"  {size:>6} B ~{tokens(size):>5} tok  {rel} (adapter, not budgeted)")
 
     print(f"\nGlob-attached rules for a sample edit of `{args.sample}`:")
     for path, meta, size in rule_files(base):

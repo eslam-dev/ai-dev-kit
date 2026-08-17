@@ -19,7 +19,7 @@ Run automatically after meaningful source changes and before task completion.
    - relevant `.ai/project-index/DOMAINS/*.md`
    - grep single lines from `.ai/project-index/SYMBOLS.jsonl` for the changed files' symbols
    - on demand: `ROUTES.md`, `RELATIONS.md`, `FILES.md`
-3. Ensure `.cursor/rules/` has the standard category structure.
+3. Ensure `.ai/rules/` has the standard category structure.
 4. Match affected concepts to existing rule files by scope and content.
 5. Update the smallest relevant rules.
 6. Create a focused new `.mdc` file when no suitable rule exists.

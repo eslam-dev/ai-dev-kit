@@ -9,6 +9,11 @@ set -euo pipefail
 #                                  projects; --force also overwrites locally
 #                                  modified seeded rules.
 # ai-dev query <subcmd> [...]      exact index lookups (see ai-dev-query -h).
+# ai-dev editors                   list every supported editor adapter.
+#
+# --editors=a,b / --all-editors    seed adapters for those editors and remember
+#                                  the choice in .ai/editors. Editors already
+#                                  present in the project are detected anyway.
 
 # Resolve the real script location through the ~/.local/bin symlink so the
 # kit home (and its VERSION file) is found in both the installed layout and
@@ -47,17 +52,20 @@ EOF
 }
 
 INDEX_FLAGS=""
+INIT_FLAGS=""   # editor-selection flags forwarded to ai-dev-init
 STAMP_OK=1   # cleared when the project stamp is newer than the installed kit
 
 run_pipeline() {  # $1=project  $2=plain|update  $3=""|--force
   local project="$1" mode="$2" force="${3:-}"
   if [ "$mode" = update ]; then
-    ai-dev-init "$project" --update
+    # shellcheck disable=SC2086
+    ai-dev-init "$project" --update $INIT_FLAGS
     # shellcheck disable=SC2086
     ai-dev-project-index "$project" $INDEX_FLAGS
     ai-dev-project-rules "$project" --update ${force:+$force}
   else
-    ai-dev-init "$project"
+    # shellcheck disable=SC2086
+    ai-dev-init "$project" $INIT_FLAGS
     # shellcheck disable=SC2086
     ai-dev-project-index "$project" $INDEX_FLAGS
     ai-dev-project-rules "$project"
@@ -77,6 +85,11 @@ run_pipeline() {  # $1=project  $2=plain|update  $3=""|--force
 if [ "${1:-}" = "query" ]; then
   shift
   exec ai-dev-query "$@"
+fi
+
+# ---- ai-dev editors : list the supported editor adapters ----
+if [ "${1:-}" = "editors" ]; then
+  exec ai-dev-init --list-editors
 fi
 
 # ---- ai-dev spec <slug> [project] : scaffold a spec-lite feature dir ----
@@ -118,6 +131,7 @@ if [ "${1:-}" = "update" ]; then
     case "$arg" in
       --force) FORCE="--force" ;;
       --full) INDEX_FLAGS="--full" ;;
+      --editors=*|--editor=*|--all-editors) INIT_FLAGS="$INIT_FLAGS $arg" ;;
       *) PROJECTS+=("$arg") ;;
     esac
   done
@@ -134,6 +148,7 @@ PROJECT="."
 for arg in "$@"; do
   case "$arg" in
     --full) INDEX_FLAGS="--full" ;;
+    --editors=*|--editor=*|--all-editors) INIT_FLAGS="$INIT_FLAGS $arg" ;;
     *) PROJECT="$arg" ;;
   esac
 done

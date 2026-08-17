@@ -8,7 +8,7 @@ Security:
 - Never run destructive database operations in ANY environment — `DROP` (table/database/schema), `TRUNCATE`, `migrate:fresh`/`migrate:refresh`/`migrate:reset`, `db:wipe`, deleting database files, bulk unscoped deletes, or cache/redis flushes — without explicit user approval in the current session. Prefer non-destructive alternatives (plain `migrate`, targeted rollbacks). Production additionally requires a verified backup/rollback path.
 
 Execution discipline:
-- Before broad repository search or reading, run `ai-dev .` (initializes adapters, refreshes the index, syncs rules, auto-applies kit updates; safe and idempotent). Then follow the project's `AGENTS.md` and seeded `.cursor/rules/` — task routing, index-first navigation, stack conventions, and rule maintenance live there.
+- Before broad repository search or reading, run `ai-dev .` (initializes adapters, refreshes the index, syncs rules, auto-applies kit updates; safe and idempotent). Then follow the project's `AGENTS.md` and the shared `.ai/rules/` set — task routing, index-first navigation, stack conventions, and rule maintenance live there.
 - Inspect existing project patterns before changing code. Preserve backward compatibility unless explicitly requested.
 - Keep the diff proportional to the request: default to one file; edit in place; never rewrite a whole file to change part of it; do not create new files, layers, or docs for small work; say why before touching more than three files; make no drive-by refactors, renames, or reformatting. Every changed line must trace to the request.
 - Never introduce or approve an N+1 query; query count must remain bounded as result size grows.

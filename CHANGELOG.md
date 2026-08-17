@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.6.0
+
+**One rule set, every editor.** Project rules moved out of the Cursor-specific folder into a single
+shared location, and thirteen more editors now get an adapter.
+
+- **Rules live in `.ai/rules/`.** One directory, read by every tool — no per-editor copies of the
+  same rule. `.cursor/rules` becomes a **symlink** to `../.ai/rules` (Cursor is the one tool that
+  auto-loads a directory of `.mdc` files, so it keeps working unchanged). Projects seeded by kit
+  ≤1.5 are migrated automatically on the next `ai-dev .`: every file — kit-seeded, locally edited,
+  and hand-written — moves into `.ai/rules/`, then the symlink replaces the old directory. The seed
+  manifest moves with it (`.ai/rules/.seed-manifest.json`), so hash-tracked updates, pruning, and
+  `kept: (locally modified)` behave exactly as before.
+  `ai-dev` prints a warning when `.gitignore` excludes `.ai/` — ignore `.ai/project-index/` instead,
+  or your rules stop being committed.
+- **Editor adapters for 13 more tools:** Kilo Code (`.kilo/rules/`, plus the `instructions` glob in
+  `kilo.jsonc`, and legacy `.kilocode/rules/`), Windsurf (`.windsurf/rules/`), Devin Desktop
+  (`.devin/rules/`), Antigravity (`.agents/rules/`), Roo Code (`.roo/rules/`), Cline (`.clinerules`,
+  directory or single file), Continue (`.continue/rules/`), Trae, Junie, Zed (`.rules`), Gemini CLI
+  (`GEMINI.md`), and Aider (`CONVENTIONS.md`) — alongside the existing Claude Code, Copilot, and
+  Specify adapters. Each is a short managed-block pointer to `AGENTS.md` and `.ai/rules/`, never a
+  copy of the rules, so the always-on context cost stays flat no matter how many editors you enable.
+  Windsurf/Devin and Continue adapters carry the always-on frontmatter their format expects, written
+  above the managed block so your customizations still survive updates.
+- **Adapters are seeded for editors the project actually uses**, detected from their own config
+  directory. Add others explicitly with `ai-dev . --editors=kilo,windsurf` (or `--all-editors`); the
+  choice is remembered in `.ai/editors` and re-applied on every run. `ai-dev editors` lists them all.
+- `tools/measure-context.py` now measures `.ai/rules` and every adapter path; `doctor.sh` and the
+  smoke suite cover the new layout, the migration, and the adapter lifecycle.
+
 ## 1.5.0
 
 **The declaration layer** — agents now learn how to call project code, and where to edit it, without opening files. Index format `1.5.0` (rebuilds automatically).

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ai-dev-init [project] [--update]
+# ai-dev-init [project] [--update] [--editors=a,b] [--all-editors] [--list-editors]
 #
 # Scaffolds the cross-tool adapter files. Kit-owned content lives inside a
 # managed block (between the ai-dev-kit:begin/end markers); everything a
@@ -9,15 +9,58 @@ set -euo pipefail
 # pre-marker legacy files are migrated: pristine kit copies (recognized by
 # hash) are replaced, edited ones get the managed block appended below the
 # project's own content.
+#
+# AGENTS.md (canonical) and CLAUDE.md are always written. Every other editor
+# adapter is seeded when that editor is detected in the project, remembered in
+# .ai/editors, or named explicitly via --editors / --all-editors.
 
 UPDATE=0
+ALL_EDITORS=0
+REQUESTED=""
 PROJECT="."
 for arg in "$@"; do
   case "$arg" in
     --update) UPDATE=1 ;;
+    --all-editors) ALL_EDITORS=1 ;;
+    --editors=*|--editor=*) REQUESTED="$REQUESTED $(printf '%s' "${arg#*=}" | tr ',' ' ')" ;;
+    --list-editors) LIST_EDITORS=1 ;;
     *) PROJECT="$arg" ;;
   esac
 done
+
+# ---- cross-editor adapter registry ---------------------------------------
+# name|adapter path|space-separated detection markers|frontmatter style
+# Detection markers are the directories/files an editor creates for its own
+# config; when one exists the project already uses that editor, so its adapter
+# is seeded. `-` means the adapter is plain Markdown with no frontmatter.
+EDITORS='kilo|.kilo/rules/00-ai-dev-kit.md|.kilo kilo.jsonc|-
+kilocode|.kilocode/rules/00-ai-dev-kit.md|.kilocode .kilocoderules|-
+windsurf|.windsurf/rules/ai-dev-kit.md|.windsurf .windsurfrules|trigger
+devin|.devin/rules/ai-dev-kit.md|.devin|trigger
+antigravity|.agents/rules/ai-dev-kit.md|.agents .agent|-
+roo|.roo/rules/00-ai-dev-kit.md|.roo .roorules|-
+cline|.clinerules/00-ai-dev-kit.md|.clinerules|-
+continue|.continue/rules/ai-dev-kit.md|.continue|always
+trae|.trae/rules/project_rules.md|.trae|-
+junie|.junie/guidelines.md|.junie|-
+zed|.rules|.zed .rules|-
+gemini|GEMINI.md|.gemini GEMINI.md|-
+aider|CONVENTIONS.md|.aider.conf.yml .aider.conf.yaml|-
+copilot|.github/copilot-instructions.md|.github|-
+specify|.specify/memory/project-index.md|.specify|-'
+
+editor_names() { printf '%s\n' "$EDITORS" | cut -d'|' -f1; }
+
+editor_field() {  # $1=name  $2=field number (2=path, 3=markers, 4=frontmatter)
+  printf '%s\n' "$EDITORS" | awk -F'|' -v n="$1" -v f="$2" '$1 == n { print $f; exit }'
+}
+
+if [ "${LIST_EDITORS:-0}" -eq 1 ]; then
+  printf 'Editors supported by ai-dev-init (always on: AGENTS.md, CLAUDE.md):\n'
+  printf '%s\n' "$EDITORS" | awk -F'|' '{ printf "  %-12s %-34s detected via: %s\n", $1, $2, $3 }'
+  exit 0
+fi
+
 PROJECT="$(cd "$PROJECT" && pwd)"
 
 BEGIN_MARK='<!-- ai-dev-kit:begin — managed block, updated automatically; add customizations outside it -->'
@@ -83,14 +126,18 @@ replace_block() {  # $1=file  $2=replacement block; prints the rewritten file
   printf '%s' "$out"
 }
 
-write_managed() {  # $1=target; kit body (without markers) on stdin
-  local target="$1" body block
+write_managed() {  # $1=target  $2=optional frontmatter (creation only); kit body on stdin
+  local target="$1" header="${2:-}" body block
   body="$(cat)"
   block="${BEGIN_MARK}"$'\n'"${body}"$'\n'"${END_MARK}"
 
   if [[ ! -e "$target" ]]; then
     mkdir -p "$(dirname "$target")"
-    printf '%s\n' "$block" > "$target"
+    if [[ -n "$header" ]]; then
+      printf '%s\n%s\n' "$header" "$block" > "$target"
+    else
+      printf '%s\n' "$block" > "$target"
+    fi
     return 0
   fi
 
@@ -126,6 +173,55 @@ write_generated() {  # $1=target; kit-owned generated file, refreshed when it di
   printf '%s\n' "$body" > "$target"
 }
 
+# Every adapter carries the same short pointer to AGENTS.md (the canonical
+# protocol) and to `.ai/rules/` (the one shared rule set), so the always-on
+# context stays tiny and nothing is duplicated per editor. copilot and specify
+# keep their historical longer bodies.
+
+adapter_frontmatter() {  # $1=frontmatter style from the registry
+  case "$1" in
+    trigger) printf -- '---\ntrigger: always_on\ndescription: Index-first project workflow (ai-dev-kit)\n---' ;;
+    always)  printf -- '---\nname: Project index-first workflow\nalwaysApply: true\n---' ;;
+    *) : ;;
+  esac
+}
+
+adapter_body() {  # $1=editor name
+  case "$1" in
+    copilot)
+      cat <<'EOF'
+# Project Intelligence First
+
+Before broad searching or reading, run `ai-dev .`.
+
+Locate work tiered — stop as soon as you know where to work:
+1. `ai-dev query <symbol|route|file|domain> <term>` — exact lookups in a few lines.
+2. `.ai/project-index/PROJECT_MAP.md` — stack, domains, entry points, key files.
+3. The one relevant `.ai/project-index/DOMAINS/<domain>.md`.
+4. On demand only: `ROUTES.md`, `SCHEMA.md`, `FRAMEWORK.md`, `RELATIONS.md`, `FILES.md`.
+
+Open only the smallest relevant set of real files. Verify security, payments, authorization, and migration logic directly in source. Refresh the index after code changes (`ai-dev .`).
+EOF
+      ;;
+    specify)
+      cat <<'EOF'
+# Project Index Integration
+
+Specifications, plans, and tasks must consult `.ai/project-index/` (the canonical project map). Follow `AGENTS.md` at the repository root: run `ai-dev .` first, use `ai-dev query` and tiered index reads, reference exact file paths and symbols, mark inferred information as inferred, and verify sensitive flows against current source.
+EOF
+      ;;
+    *)
+      cat <<'EOF'
+# Project AI Workflow
+
+At the start of every task, run `ai-dev .`, then read and follow `AGENTS.md` — the canonical index-first instructions (`ai-dev query` lookups, tiered reads of `.ai/project-index/`).
+
+Project rules live in `.ai/rules/` — one shared set for every editor, not a per-editor copy. Read `.ai/rules/00-core/` before starting, then only the topical directories matching what you touch (`10-laravel/`, `20-database/`, `40-security/`, `60-testing/`, `65-domain/<domain>/`, …).
+EOF
+      ;;
+  esac
+}
+
 mkdir -p "$PROJECT/.ai/project-index/DOMAINS"
 
 write_managed "$PROJECT/AGENTS.md" <<'EOF'
@@ -143,40 +239,103 @@ Locate work through the project index — tiered, stopping as soon as the work i
 7. Grep a single line from `SYMBOLS.jsonl` for anything the above doesn't answer — never read it whole.
 8. On demand only: `ROUTES.md` (routing), `SCHEMA.md` (database schema), `FRAMEWORK.md` (events, policies, queues, schedule), `HOOKS.md` (WordPress hooks), `RELATIONS.md` (dependency tracing), `FILES.md` (full inventory).
 
+Project rules live in `.ai/rules/` — one shared set every editor reads (Cursor sees it through the `.cursor/rules` symlink). Read `.ai/rules/00-core/` at task start and the topical directories matching what you touch; never copy rules into an editor-specific folder.
+
 Keep every change proportional to the request: edit in place with targeted replacements, never rewrite a whole file to change part of it, do not create new files (or README/summary/notes files) for small work, and make no drive-by renames, reformatting, or refactors in code you were not asked to touch. Review the final diff — every changed line must trace to the request.
 
 Open a full source file only when you are about to change it, or when the index is missing detail. The index is never authoritative for security, payments, authorization, tenancy, concurrency, migrations, destructive operations, or production incidents — verify those directly in source. Refresh with `ai-dev .` after source changes.
 EOF
 
-write_managed "$PROJECT/CLAUDE.md" <<'EOF'
-# Project AI Workflow
+adapter_body claude | write_managed "$PROJECT/CLAUDE.md"
 
-At the start of every task, run `ai-dev .`, then read and follow `AGENTS.md` — the canonical index-first instructions (`ai-dev query` lookups, tiered reads of `.ai/project-index/`).
-EOF
+# ---- editor adapters ------------------------------------------------------
+known_editor() { editor_names | grep -qx "$1"; }
 
-if [[ -d "$PROJECT/.github" ]]; then
-  write_managed "$PROJECT/.github/copilot-instructions.md" <<'EOF'
-# Project Intelligence First
+PINNED=""    # remembered in .ai/editors — seeded whether or not the editor is detected
+SELECTED=""  # pinned + auto-detected
 
-Before broad searching or reading, run `ai-dev .`.
+add_to() {  # $1=name of the list variable  $2=editor to append once
+  local current="${!1}"
+  case " $current " in
+    *" $2 "*) return 0 ;;
+  esac
+  eval "$1=\"\$current \$2\""
+}
 
-Locate work tiered — stop as soon as you know where to work:
-1. `ai-dev query <symbol|route|file|domain> <term>` — exact lookups in a few lines.
-2. `.ai/project-index/PROJECT_MAP.md` — stack, domains, entry points, key files.
-3. The one relevant `.ai/project-index/DOMAINS/<domain>.md`.
-4. On demand only: `ROUTES.md`, `SCHEMA.md`, `FRAMEWORK.md`, `RELATIONS.md`, `FILES.md`.
+pin_editor() {
+  if ! known_editor "$1"; then
+    printf 'warning: unknown editor %s (see: ai-dev-init --list-editors)\n' "$1" >&2
+    return 0
+  fi
+  add_to PINNED "$1"
+  add_to SELECTED "$1"
+}
 
-Open only the smallest relevant set of real files. Verify security, payments, authorization, and migration logic directly in source. Refresh the index after code changes (`ai-dev .`).
-EOF
+EDITORS_FILE="$PROJECT/.ai/editors"
+if [[ -f "$EDITORS_FILE" ]]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(printf '%s' "${line%%#*}" | tr -d '[:space:]')"
+    [ -n "$line" ] && pin_editor "$line"
+  done < "$EDITORS_FILE"
 fi
 
-if [[ -d "$PROJECT/.specify" ]]; then
-  write_managed "$PROJECT/.specify/memory/project-index.md" <<'EOF'
-# Project Index Integration
+for name in $REQUESTED; do pin_editor "$name"; done
 
-Specifications, plans, and tasks must consult `.ai/project-index/` (the canonical project map). Follow `AGENTS.md` at the repository root: run `ai-dev .` first, use `ai-dev query` and tiered index reads, reference exact file paths and symbols, mark inferred information as inferred, and verify sensitive flows against current source.
-EOF
+if [[ "$ALL_EDITORS" -eq 1 ]]; then
+  while IFS= read -r name; do pin_editor "$name"; done < <(editor_names)
 fi
+
+# Auto-detect: an editor's own config directory/file in the project means the
+# project already uses it, so seed its adapter without pinning the choice.
+while IFS= read -r name; do
+  for marker in $(editor_field "$name" 3); do
+    if [[ -e "$PROJECT/$marker" ]]; then
+      add_to SELECTED "$name"
+      break
+    fi
+  done
+done < <(editor_names)
+
+if [[ -n "$REQUESTED" || "$ALL_EDITORS" -eq 1 ]]; then
+  mkdir -p "$PROJECT/.ai"
+  {
+    printf '# Editor adapters ai-dev-init keeps in this project (ai-dev-init --list-editors).\n'
+    printf '# Detected editors are seeded automatically and need no entry here.\n'
+    for name in $PINNED; do printf '%s\n' "$name"; done
+  } > "$EDITORS_FILE"
+fi
+
+SEEDED=""
+for name in $SELECTED; do
+  target="$(editor_field "$name" 2)"
+  style="$(editor_field "$name" 4)"
+  # .clinerules ships as either a single root file or a directory of rules.
+  if [[ "$name" = cline && -f "$PROJECT/.clinerules" ]]; then
+    target=".clinerules"
+    style="-"
+  fi
+  adapter_body "$name" | write_managed "$PROJECT/$target" "$(adapter_frontmatter "$style")"
+  SEEDED="${SEEDED}  ${name}: ${target}"$'\n'
+done
+
+# Kilo only loads .kilo/rules/*.md when kilo.jsonc lists it under "instructions"
+# (.kilocode/rules/ is auto-included for backward compatibility).
+case " $SELECTED " in
+  *" kilo "*)
+    KILO_CONFIG="$PROJECT/kilo.jsonc"
+    if [[ ! -e "$KILO_CONFIG" ]]; then
+      cat > "$KILO_CONFIG" <<'EOF'
+{
+  // Kilo Code project configuration. Files listed under "instructions" are
+  // loaded into every task; add your own globs alongside the ai-dev-kit one.
+  "instructions": [".kilo/rules/*.md"]
+}
+EOF
+    elif ! grep -q '\.kilo/rules' "$KILO_CONFIG"; then
+      NOTICES="${NOTICES}  kilo.jsonc: add \".kilo/rules/*.md\" to \"instructions\" so Kilo loads the seeded rule"$'\n'
+    fi
+    ;;
+esac
 
 write_generated "$PROJECT/.ai/project-index/README.md" <<'EOF'
 # Project Intelligence Index
@@ -197,11 +356,8 @@ fi
 printf 'Project AI integration initialized:\n'
 printf '  Canonical protocol: AGENTS.md (managed block)\n'
 printf '  Claude Code: CLAUDE.md -> AGENTS.md\n'
-if [[ -d "$PROJECT/.github" ]]; then
-  printf '  VS Code/Copilot: .github/copilot-instructions.md\n'
-fi
-if [[ -d "$PROJECT/.specify" ]]; then
-  printf '  Specify: .specify/memory/project-index.md -> AGENTS.md\n'
+if [[ -n "$SEEDED" ]]; then
+  printf 'Editor adapters (-> AGENTS.md):\n%s' "$SEEDED"
 fi
 printf '  Index: .ai/project-index/\n'
 if [[ -n "$NOTICES" ]]; then

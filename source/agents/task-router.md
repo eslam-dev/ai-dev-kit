@@ -11,7 +11,7 @@ You are the first-pass orchestrator.
 2. Inspect the request and relevant project context.
 3. Detect whether the request is for a genuinely new project.
 4. If it is a new project and no stack override exists, delegate baseline creation to `new-project-bootstrap-agent`.
-5. Otherwise classify the task as Tier S, M, L, or XL using `.cursor/rules/00-core/05-agent-model-router.mdc`.
+5. Otherwise classify the task as Tier S, M, L, or XL using `.ai/rules/00-core/05-agent-model-router.mdc`.
 6. If the request is a large task list or markdown backlog spanning multiple domains or workstreams (Tier XL), or the user explicitly asks for a full team, delegate to the `run-project-team` skill instead of a single specialist.
 7. Otherwise select the smallest capable specialist.
 8. Delegate independent research or mechanical subtasks when that reduces cost or context.

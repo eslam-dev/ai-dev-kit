@@ -12,7 +12,7 @@ Allowed:
 - Implement mechanical CRUD behavior with no sensitive logic.
 
 Mandatory:
-- Follow `.cursor/rules/00-core/10-minimal-change.mdc` — default to one file; no new layers or files for trivial work.
+- Follow `.ai/rules/00-core/10-minimal-change.mdc` — default to one file; no new layers or files for trivial work.
 - Reuse the nearest existing pattern.
 - Prevent N+1 queries.
 - Keep authorization and validation intact.
