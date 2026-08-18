@@ -9,6 +9,8 @@ set -euo pipefail
 #                                  projects; --force also overwrites locally
 #                                  modified seeded rules.
 # ai-dev query <subcmd> [...]      exact index lookups (see ai-dev-query -h).
+# ai-dev verify [--gates]          completion gate: index checks, then the
+#                                  project's own composer test/analyse/lint.
 # ai-dev editors                   list every supported editor adapter.
 #
 # --editors=a,b / --all-editors    seed adapters for those editors and remember
@@ -85,6 +87,12 @@ run_pipeline() {  # $1=project  $2=plain|update  $3=""|--force
 if [ "${1:-}" = "query" ]; then
   shift
   exec ai-dev-query "$@"
+fi
+
+# ---- ai-dev verify [...] : completion gate ----
+if [ "${1:-}" = "verify" ]; then
+  shift
+  exec ai-dev-verify "$@"
 fi
 
 # ---- ai-dev editors : list the supported editor adapters ----

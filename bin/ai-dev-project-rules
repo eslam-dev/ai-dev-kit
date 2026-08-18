@@ -42,19 +42,14 @@ alwaysApply: true
 ---
 # Project Navigation
 
-Run `ai-dev .` before broad repository exploration, then locate work tiered — stop as soon as it is located:
-1. `ai-dev query map` — orientation: stack, tooling, domains.
-2. `ai-dev query symbol|route|hook|file|domain|table|env <term>` — exact lookups in a few lines.
-3. `ai-dev query api <Class|domain>` — public signatures, ranges, and summaries without opening a file; `snippet <Class::method>` — only that symbol's lines; `callers <Class::method>` — edit impact.
-4. `.ai/project-index/PROJECT_MAP.md`, then the one relevant `DOMAINS/<domain>.md`; grep a single line from `SYMBOLS.jsonl` only when query cannot answer — never read it whole.
+Run `ai-dev .` before broad exploration, then follow the tiered lookup ladder in `AGENTS.md` — `ai-dev query map`, then exact lookups (`symbol`/`route`/`hook`/`file`/`domain`/`table`/`env`), then `api`/`snippet`/`callers`, then the generated maps.
 
-Never read a whole file to learn a signature or to see one method — that is what `api` and `snippet` are for.
-
-`ROUTES.md`, `SCHEMA.md`, `FRAMEWORK.md`, `HOOKS.md`, `RELATIONS.md`, and `FILES.md` are on-demand only. Open only the smallest relevant source set; verify security/payments/authorization/migrations directly in source; re-run `ai-dev .` after changes.
+Never read a whole file to learn a signature or to see one method — that is what `api` and `snippet` are for. Open source only when you are about to change it; verify security, payments, authorization, and migrations directly in source; re-run `ai-dev .` after changes.
 """,
     "00-core/rule-maintenance.mdc": """---
-description: Keep project-specific rules synchronized after meaningful code changes
-alwaysApply: true
+description: Keep project rules synchronized after meaningful code changes
+globs: "**/*.php,**/*.mdc"
+alwaysApply: false
 ---
 # Rule Maintenance
 

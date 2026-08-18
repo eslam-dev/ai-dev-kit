@@ -243,6 +243,8 @@ Project rules live in `.ai/rules/` — one shared set every editor reads (Cursor
 
 Keep every change proportional to the request: edit in place with targeted replacements, never rewrite a whole file to change part of it, do not create new files (or README/summary/notes files) for small work, and make no drive-by renames, reformatting, or refactors in code you were not asked to touch. Review the final diff — every changed line must trace to the request.
 
+Before reporting any change complete, run `ai-dev verify` and clear every blocking finding; add `--gates` to also run the project's own test/analyse/lint. A change is not done until it passes.
+
 Open a full source file only when you are about to change it, or when the index is missing detail. The index is never authoritative for security, payments, authorization, tenancy, concurrency, migrations, destructive operations, or production incidents — verify those directly in source. Refresh with `ai-dev .` after source changes.
 EOF
 

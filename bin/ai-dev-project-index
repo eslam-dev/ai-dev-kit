@@ -263,6 +263,17 @@ def head_text(path: Path, limit: int = 8192) -> str:
         return ""
 
 
+def laravel_major(constraint: str) -> int | None:
+    """Major version from a composer constraint (`^11.9`, `>=10.0`, `12.*`).
+
+    Used to gate strict-mode APIs: `Model::shouldBeStrict()` needs 9+,
+    `DB::prohibitDestructiveCommands()` needs 11+. Returns None when the
+    constraint is absent or unparseable — callers then suggest nothing.
+    """
+    m = re.search(r"(\d+)", str(constraint or ""))
+    return int(m.group(1)) if m else None
+
+
 def detect_stack(root: Path, source_file_count: int | None = None) -> dict[str, Any]:
     composer = read_json(root / "composer.json")
     require: dict[str, str] = {}
@@ -363,6 +374,7 @@ def detect_stack(root: Path, source_file_count: int | None = None) -> dict[str, 
         "node": (root / "package.json").exists(),
         "wordpress": wordpress,
         "php_version": str(require.get("php", "")),
+        "laravel_version": laravel_major(require.get("laravel/framework", "")),
         "testing": testing,
         "static_analysis": static_analysis,
         "formatter": formatter,

@@ -61,6 +61,7 @@ token budget, and lints the kit's own content).
 |---|---|
 | `ai-dev .` | Init + index + rules in one step, **with automatic kit-update detection**. The only command normal use requires. |
 | `ai-dev query <sub> <term>` | Side-effect-free exact lookups over the index (see below). |
+| `ai-dev verify [--gates]` | Completion gate: index checks, then optionally the project's own test/analyse/lint. Exit `0` clean, `1` blocking, `2` could not run. |
 | `ai-dev spec <slug>` | Scaffolds `.ai/specs/NNN-slug/{spec,plan,tasks}.md` for large (Tier L/XL) features. |
 | `ai-dev update [--force] [projects...]` | Manual refresh of kit-managed files; `--force` also overwrites locally modified seeded rules. |
 | `ai-dev editors` | Lists every editor adapter the kit can seed. |
@@ -134,6 +135,34 @@ Code, Codex, Amp, Jules, and anything else that reads `AGENTS.md`.
 Because rules now live under `.ai/`, keep that directory in version control — ignore
 `.ai/project-index/` specifically rather than all of `.ai/`. `ai-dev` warns if your `.gitignore`
 excludes `.ai/`.
+
+## Enforcement, not just advice
+
+Rules an agent reads are advisory — it can ignore them silently. Two things in the kit are not:
+
+**Runtime.** The `harden-runtime` skill stages Laravel's own guards into a project:
+`DB::prohibitDestructiveCommands()` first, then `Model::preventLazyLoading()` in tests, then dev with
+`handleLazyLoadingViolationUsing()` so production logs instead of throwing, then the full
+`shouldBeStrict()`. An N+1 stops being a rule violation and becomes a failing test. The kit never
+writes into `app/` and never enables this automatically on an existing codebase — turning it on
+surfaces every latent violation at once, which has to be a staged decision.
+
+**A gate.** `ai-dev verify` must pass before a change counts as done:
+
+```bash
+ai-dev verify            # index checks only — fast, no PHP, no project execution
+ai-dev verify --gates    # also runs the project's own composer test/analyse/lint
+ai-dev verify --json     # for hooks and CI
+```
+
+It blocks on WordPress REST routes with no `permission_callback`, Eloquent models with neither
+`$fillable` nor `$guarded`, and migrations with a missing or empty `down()`; it warns when Laravel
+strict mode is off. Absent tooling is reported as skipped, never as failed.
+
+`ai-dev verify --install-hook` merges a blocking `Stop` hook into `.claude/settings.json` (opt-in;
+never written by `ai-dev .`). **It covers Claude Code and Cursor only** — the other 14 adapters get
+the always-on rule, which cannot be enforced mechanically. For editor-independent enforcement, wire
+`ai-dev verify` into CI.
 
 ## The Project Intelligence Index
 

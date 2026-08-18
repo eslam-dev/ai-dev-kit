@@ -22,12 +22,6 @@ The size of the diff must match the size of the request. A one-line problem gets
 
 No new class, helper, service, action, DTO, repository, wrapper, config file, trait, or `utils` module when the change fits an existing file. A new file needs a reason you can state in one sentence.
 
-Common overreach to reject:
-- One validation rule → new `StoreXRequest` **and** new `XService` **and** new `XAction`.
-- Typo or null-check fix → new helper + test file refactor across the module.
-- Single Blade/Inertia label change → new component + layout restructure.
-- Config tweak → new config file + service provider + docs.
-
 ## No unrequested side artifacts
 
 Do not add README updates, summary/notes/migration files, changelog entries, examples, ADRs, or scratch files unless the task asked for them or the project's own convention requires them.
@@ -43,5 +37,3 @@ Check the project index (`ai-dev query`) for an existing function, pattern, or r
 ## Prove the scope before finishing
 
 Review the final diff: every touched file and every changed line must trace directly to the request. Revert whatever does not.
-
-If a task genuinely requires touching many files, say why first, then do it — breadth must be a deliberate decision, never a side effect.

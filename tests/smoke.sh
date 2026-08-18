@@ -6,8 +6,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/bin"
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+WORK="${SMOKE_WORK:-$(mktemp -d)}"
+trap '[ -n "${SMOKE_KEEP:-}" ] || rm -rf "$WORK"' EXIT
 export AI_DEV_KIT_HOME="$ROOT"
 
 PASS=0
@@ -65,13 +65,17 @@ namespace App\Models;
 class Order extends Model
 {
     protected $table = 'orders';
+    protected $fillable = ['status'];
     public function items() { return $this->hasMany(OrderItem::class); }
 }
 EOF
 cat > "$L/app/Models/LatestPost.php" <<'EOF'
 <?php
 namespace App\Models;
-class LatestPost extends Model {}
+class LatestPost extends Model
+{
+    protected $guarded = ['id'];
+}
 EOF
 cat > "$L/app/Livewire/OrderTable.php" <<'EOF'
 <?php
@@ -105,6 +109,9 @@ return new class extends Migration {
             $table->string('status');
             $table->timestamps();
         });
+    }
+    public function down(): void {
+        Schema::dropIfExists('orders');
     }
 };
 EOF
@@ -319,6 +326,85 @@ printf '\nMY OWN NOTE\n' >> "$E/.kilo/rules/00-ai-dev-kit.md"
 (cd "$E" && "$BIN/ai-dev-init" . --update >/dev/null)
 check "adapter customization survives update"   "grep -q 'MY OWN NOTE' '$E/.kilo/rules/00-ai-dev-kit.md' && test \"\$(grep -c 'ai-dev-kit:begin' '$E/.kilo/rules/00-ai-dev-kit.md')\" -eq 1"
 check "--list-editors lists kilo and windsurf"  "'$BIN/ai-dev-init' --list-editors | grep -q kilo && '$BIN/ai-dev-init' --list-editors | grep -q windsurf"
+
+# ------------------------------------------------------- completion gate ----
+echo "== ai-dev verify"
+check "laravel_version detected in stack"       "python3 -c \"import json;s=json.load(open('$L/.ai/project-index/manifest.json'))['stack'];assert s['laravel_version']==11,s['laravel_version']\""
+check "clean laravel fixture verifies"          "'$BIN/ai-dev-verify' '$L'"
+check "always-on rule demands the gate"         "grep -q 'ai-dev verify' '$L/.ai/rules/00-core/00-operating-principles.mdc'"
+check "AGENTS.md demands the gate"              "grep -q 'ai-dev verify' '$L/AGENTS.md'"
+
+# a model with no $fillable/$guarded must block
+cat > "$L/app/Models/Unguarded.php" <<'EOF'
+<?php
+namespace App\Models;
+use Illuminate\Database\Eloquent\Model;
+class Unguarded extends Model {}
+EOF
+run_pipeline "$L"
+if "$BIN/ai-dev-verify" "$L" >"$WORK/verify.out" 2>&1; then
+  bad "unguarded model should block verify"
+else
+  rc=$?
+  if [ "$rc" -eq 1 ] && grep -q 'Unguarded.php' "$WORK/verify.out"; then
+    ok "unguarded model blocks verify (exit 1, names the file)"
+  else
+    bad "unguarded model: exit $rc, output: $(head -2 "$WORK/verify.out" | tr '\n' ' ')"
+  fi
+fi
+# `--json` exits non-zero by design, so capture it rather than piping under pipefail.
+"$BIN/ai-dev-verify" "$L" --json > "$WORK/verify.json" 2>/dev/null || true
+check "--json reports the failure structurally" "python3 -c \"import json;d=json.load(open('$WORK/verify.json'));assert d['ok'] is False;assert any(f['severity']=='blocking' for f in d['findings'])\""
+rm "$L/app/Models/Unguarded.php"
+run_pipeline "$L"
+check "verify clean again after removal"         "'$BIN/ai-dev-verify' '$L'"
+
+# an empty down() must block
+cat > "$L/database/migrations/2024_02_02_000000_create_carts_table.php" <<'EOF'
+<?php
+return new class extends Migration {
+    public function up(): void { Schema::create('carts', function (Blueprint $t) { $t->id(); }); }
+    public function down(): void {}
+};
+EOF
+run_pipeline "$L"
+"$BIN/ai-dev-verify" "$L" >"$WORK/verify2.out" 2>&1 || true
+check "empty down() blocks verify"              "grep -q 'empty down()' '$WORK/verify2.out'"
+rm "$L/database/migrations/2024_02_02_000000_create_carts_table.php"
+run_pipeline "$L"
+
+# WordPress: the kit's one pre-existing risk signal becomes a gate
+"$BIN/ai-dev-verify" "$W" >"$WORK/verify-wp.out" 2>&1 || true
+check "missing permission_callback blocks"      "grep -q 'permission_callback' '$WORK/verify-wp.out'"
+
+# no index at all must not block (exit 2), so a Stop hook can never trap an agent
+NOIDX="$WORK/noindex"; mkdir -p "$NOIDX"
+"$BIN/ai-dev-verify" "$NOIDX" >/dev/null 2>&1 && rc=0 || rc=$?
+check "no index exits 2 (never blocks)"         "test '$rc' -eq 2"
+
+# verify must not write to the project
+touch "$WORK/verify-marker"; sleep 1.1
+"$BIN/ai-dev-verify" "$L" >/dev/null 2>&1 || true
+check "verify writes nothing to the project"    "test -z \"\$(find '$L' -newer '$WORK/verify-marker' -type f 2>/dev/null)\""
+
+# hook install is opt-in, merges, and translates verify 1 -> hook 2 (block)
+"$BIN/ai-dev-verify" "$L" --install-hook >/dev/null
+check "hook installed only when asked"          "grep -q 'ai-dev verify' '$L/.claude/settings.json'"
+check "hook translates blocking to exit 2"      "grep -q 'exit 2' '$L/.claude/settings.json'"
+check "hook install is idempotent"              "'$BIN/ai-dev-verify' '$L' --install-hook | grep -q 'already installed'"
+rm -rf "$L/.claude"
+
+# runtime-hardening assets
+LADDER="$ROOT/source/skills/harden-runtime/assets/strict-mode-ladder.md"
+check "harden-runtime ships the staged ladder"  "grep -q 'prohibitDestructiveCommands' '$LADDER' && grep -q 'preventLazyLoading' '$LADDER' && grep -q 'shouldBeStrict' '$LADDER'"
+check "production-safe violation handler"       "grep -q 'handleLazyLoadingViolationUsing' '$LADDER'"
+check "strict mode proof test shipped"          "grep -q 'preventsLazyLoading' '$LADDER'"
+check "query-count evidence asset shipped"      "grep -q 'enableQueryLog' '$ROOT/source/skills/optimize-query/assets/query-count-test.md'"
+# Assets must never be .php: the indexer parses .php as project source, so a
+# stub would land in the index as phantom symbols, routes, and call edges.
+check "new skill assets carry no .php stubs"    "test -z \"\$(find '$ROOT/source/skills/harden-runtime' '$ROOT/source/skills/optimize-query' -name '*.php')\""
+check "optimize-query names EXPLAIN"            "grep -q 'EXPLAIN' '$ROOT/source/skills/optimize-query/SKILL.md'"
+check "budget counts generated BASE_RULES"      "python3 '$ROOT/tools/measure-context.py' --templates | grep -q 'BASE_RULES'"
 
 # ------------------------------------------------------------- MCP server ---
 echo "== MCP server"

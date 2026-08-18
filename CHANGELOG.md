@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.7.0
+
+**Enforcement.** The kit has always *told* agents not to write N+1 queries; nothing could tell
+whether one was written. This release adds the two levels of enforcement that prose cannot provide:
+a runtime guard that makes a lazy load throw, and a completion gate that has to pass.
+
+- **`ai-dev verify` (new command): the completion gate.** Runs index-based checks with no PHP and no
+  project execution — WordPress REST routes with no `permission_callback` (detected since 1.3 but
+  only ever printed into `HOOKS.md`, now blocking), Eloquent models declaring neither `$fillable` nor
+  `$guarded`, migrations with a missing or empty `down()`, and Laravel strict mode absent (warning,
+  never blocking). `--gates` additionally runs the project's own `composer` test/analyse/lint
+  scripts, resolved from `composer.json` and **skipped rather than failed** when a tool is absent.
+  Exit codes: `0` clean, `1` blocking, `2` could not run.
+  The default mode is static and fast, and names the gates still owed.
+- **The gate is required, not suggested.** `00-core/00-operating-principles.mdc` and the `AGENTS.md`
+  managed block now both state that a change is not done until `ai-dev verify` passes.
+  `ai-dev verify --install-hook` additionally merges a blocking `Stop` hook into
+  `.claude/settings.json` — opt-in only, never during `ai-dev .`, and it preserves existing settings.
+  The hook translates verify's exit 1 into Claude Code's blocking exit 2, so a missing index can
+  never trap an agent in a loop. **Honest limit: hooks cover Claude Code and Cursor only — the other
+  14 editor adapters get the rule, which is advisory by construction.**
+- **`harden-runtime` (new skill): Laravel's runtime guards, staged.** `Model::preventLazyLoading()`
+  turns an N+1 into a failing test instead of a code-review opinion. Ships four assets as a ladder —
+  `DB::prohibitDestructiveCommands()` first (near-zero false positives), then `preventLazyLoading` in
+  tests only, then dev + `handleLazyLoadingViolationUsing()` so **production logs instead of
+  throwing**, then the full `shouldBeStrict()` bundle — plus a `StrictModeTest.php` that proves the
+  mode is actually on, since a call sitting behind a disabled flag is not enforcement. The kit never
+  writes into `app/`; the agent applies the assets. Never auto-enabled on an existing project.
+  Assets ship as Markdown with fenced snippets, not as `.php` files: the indexer parses `.php` as
+  project source, so a stub would land in the index as phantom symbols, routes, and call edges — and
+  these snippets are `boot()` fragments that could never run as standalone files anyway.
+- **The evidence the rules always demanded.** `optimize-query` used to say "compare query count at
+  small and larger cardinalities" with no mechanism, and `EXPLAIN` appeared nowhere in the kit. It now
+  ships `assets/QueryCountTest.php` — count at 1 row vs 10 rows, assert equality — and names
+  `EXPLAIN`/`EXPLAIN ANALYZE` for execution plans.
+- **`laravel_version` in the detected stack**, so version-gated APIs are only ever suggested where
+  they exist. No index-format bump: `stack` is recomputed every run and is not part of the cached
+  per-file record, so no project pays a full re-parse.
+- **Fixed: the always-on token budget was never actually enforced.** `doctor.sh` measured the
+  template library only, which never included the two `alwaysApply: true` rules
+  `ai-dev-project-rules` generates into every project. Real always-on cost was ~2,339 tokens against
+  a 2,000 budget — over since 1.4.0, and invisible. `tools/measure-context.py` now counts them, and
+  the overrun was paid down to ~1,996 by pure deduplication: `00-core/project-navigation.mdc` no
+  longer restates the tiered ladder `AGENTS.md` carries in full, `rule-maintenance` is glob-scoped
+  instead of always-on, and `10-minimal-change`/`00-operating-principles` lost text that duplicated
+  each other. Every imperative was kept and is asserted in the smoke suite.
+
 ## 1.6.0
 
 **One rule set, every editor.** Project rules moved out of the Cursor-specific folder into a single
