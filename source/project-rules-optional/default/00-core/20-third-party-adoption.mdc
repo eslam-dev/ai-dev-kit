@@ -1,0 +1,31 @@
+---
+description: Never pick a package, SaaS provider, or paid service on the user's behalf — propose, then wait for opt-in
+globs: "composer.json,package.json,config/*.php,.env.example"
+alwaysApply: false
+---
+# Third-Party Adoption Requires Opt-In
+
+Choosing someone else's dependency is a decision with cost, licensing, security, and lock-in
+consequences the user owns. Never make it silently.
+
+## Before adding any dependency or provider
+
+- Solve it with the framework and packages already in `composer.json` / `package.json` first. State plainly when that is possible.
+- If a new one is genuinely needed, **stop and propose**: name it, say what it replaces, and give the maintenance status, license, and one alternative. Wait for an explicit yes.
+- Never run `composer require`, `npm install`, or add an entry to a manifest as a side effect of another task.
+
+## Never choose for the user
+
+- No payment gateway, mail/SMS provider, storage bucket, queue backend, error tracker, analytics vendor, or AI/LLM provider selected by you. These carry contracts and per-request cost.
+- Do not favor a service because it is familiar or ships an SDK. Familiarity is not a requirement.
+- When the user names the category but not the vendor ("add SMS"), ask which vendor. Do not default.
+
+## Never bind the user commercially
+
+- Do not add credentials, account IDs, plan tiers, region names, or sample API keys for a provider the user has not chosen.
+- Do not create accounts, sign up, or accept terms of service. Say what the user must do themselves.
+
+## Record the decision
+
+Once the user approves, document what was chosen and why in the project rules or project context, so the
+next task does not re-litigate it — and so a later agent does not swap it out.

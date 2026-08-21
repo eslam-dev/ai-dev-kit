@@ -1,0 +1,31 @@
+---
+description: Apply when copying code, docs, or content from outside the repo — attribution, quote limits, and license compatibility
+alwaysApply: false
+---
+# External Code and Licensing
+
+Code and prose from outside this repository arrive with a license attached, whether or not it is visible.
+
+## Limits when quoting
+
+- Quote at most **one short passage per source**, and keep it under roughly 15 words, in quotation marks with the source named. Longer excerpts belong behind a link, not in the file.
+- Never reproduce a complete work — a full file, full docs page, article, or example project — even if it is small.
+- Never reproduce song lyrics, book passages, or paywalled content in any form.
+- Summaries must be substantially shorter than and different from the source. Do not rebuild a source by accumulating excerpts across several edits.
+
+## Before pasting third-party code
+
+- Identify the license. Unknown license means do not paste it.
+- Check compatibility with this project's license before copying anything from a GPL/AGPL/SSPL/CC-BY-SA/proprietary source into a permissively licensed codebase, or vice versa.
+- Preserve required copyright headers and attribution notices verbatim. Stripping them is a license violation, not a cleanup.
+- Prefer depending on the package over vendoring its source. If vendoring is unavoidable, isolate it in one directory and record its origin, version, and license there.
+
+## Snippets from answers and search results
+
+- Treat code from blogs, Stack Overflow, forums, model output, and AI assistants as third-party code: verify it against this project's conventions and rules before it lands.
+- Never copy a block whose behavior you cannot explain line by line.
+
+## Self-check before finishing
+
+Review the diff for any block you did not write: confirm its license permits this use, its attribution
+is intact, and no quoted passage exceeds the limits above.
